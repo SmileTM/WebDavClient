@@ -50,11 +50,17 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
-      - name: Build APK (Release)
+      - name: Build APK
         run: |
           cd client/android
           chmod +x gradlew
-          ./gradlew assembleRelease
+          if [ -f "app/release.jks" ]; then
+            echo "Keystore found. Building Release APK..."
+            ./gradlew assembleRelease
+          else
+            echo "No Keystore found. Building Debug APK..."
+            ./gradlew assembleDebug
+          fi
         env:
           CI: true
           RELEASE_KEYSTORE_PATH: release.jks
@@ -66,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-release-apk
-          path: client/android/app/build/outputs/apk/release/*.apk
+          path: client/android/app/build/outputs/apk/**/*.apk
 
   build-electron:
     name: Build Electron App
@@ -84,7 +90,7 @@ jobs:
         run: npm run install-all
 
       - name: Build Electron App
-        # Assuming build targets linux by default on ubuntu-latest. 
+        # Assuming build targets linux by default on ubuntu-latest.
         # Configure targets in package.json or command line if needed (e.g. --linux --mac --win)
         run: npm run electron:build -- -p never
       - name: Upload Electron Artifacts
@@ -98,6 +104,8 @@ jobs:
     needs: [build-android, build-electron]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
     steps:
       - name: Download Android Artifacts
         uses: actions/download-artifact@v4
@@ -117,7 +125,7 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           files: |
-            release-artifacts/android/*.apk
+            release-artifacts/android/**/*.apk
             release-artifacts/electron/*.AppImage
             release-artifacts/electron/*.deb
             release-artifacts/electron/*.exe
