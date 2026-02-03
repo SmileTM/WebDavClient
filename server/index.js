@@ -10,12 +10,14 @@ const multer = require('multer');
 const { encrypt, decrypt } = require('./utils/crypto');
 
 const app = express();
-const PORT = 8000;
+const PORT = process.env.PORT || 8000;
 const STORAGE_DIR = os.homedir(); // Default to User Home directory
-const CONFIG_FILE = path.join(__dirname, 'drives.json');
+const APP_DATA_DIR = process.env.USER_DATA_PATH || path.join(os.homedir(), '.webdav-client');
+const CONFIG_FILE = path.join(APP_DATA_DIR, 'drives.json');
 
 // Ensure storage directory exists
 fs.ensureDirSync(STORAGE_DIR);
+fs.ensureDirSync(APP_DATA_DIR);
 if (!fs.existsSync(CONFIG_FILE)) {
     fs.writeJsonSync(CONFIG_FILE, [{ id: 'local', name: 'Local Storage', type: 'local', path: './storage' }]);
 }
@@ -222,7 +224,7 @@ app.patch('/api/drives/:id', async (req, res) => {
 // Helper: Safe path resolution
 const resolveSafePath = (userPath) => {
     // Remove leading slashes to ensure it's relative
-    const safeSuffix = path.normalize(userPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\]+/, '');
+    const safeSuffix = path.normalize(userPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
     const absolutePath = path.resolve(STORAGE_DIR, safeSuffix);
     if (!absolutePath.startsWith(STORAGE_DIR)) {
         throw new Error('Access denied: Path traversal detected');
@@ -385,16 +387,20 @@ app.get('/api/raw', async (req, res) => {
 app.post('/api/mkdir', async (req, res) => {
     try {
         const { path: reqPath, drive: driveId = 'local' } = req.body;
+        console.log(`[DEBUG] POST /api/mkdir path="${reqPath}" drive="${driveId}"`);
         const config = await getDriveConfig(driveId);
 
         if (config.type === 'local') {
-            await fs.ensureDir(resolveSafePath(reqPath));
+            const absPath = resolveSafePath(reqPath);
+            console.log(`[Mkdir] Creating local directory: ${absPath}`);
+            await fs.ensureDir(absPath);
         } else {
             const client = getWebDAVClient(config);
             await client.createDirectory(reqPath);
         }
         res.json({ success: true });
     } catch (err) {
+        console.error('[Mkdir Error]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -403,12 +409,14 @@ app.post('/api/mkdir', async (req, res) => {
 app.post('/api/delete', async (req, res) => {
     try {
         const { items, drive: driveId = 'local' } = req.body;
+        console.log(`[DEBUG] POST /api/delete count=${items?.length} drive="${driveId}"`);
         const config = await getDriveConfig(driveId);
 
         if (config.type === 'local') {
             await Promise.all(items.map(async itemPath => {
-                const safePath = path.normalize(itemPath).replace(/^(\.\.[/\\])+/, '');
-                await fs.remove(path.join(STORAGE_DIR, safePath));
+                const absPath = resolveSafePath(itemPath);
+                console.log(`[Delete] Local item: ${absPath}`);
+                await fs.remove(absPath);
             }));
         } else {
             const client = getWebDAVClient(config);
@@ -416,6 +424,7 @@ app.post('/api/delete', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
+        console.error('[Delete Error]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -428,15 +437,12 @@ app.post('/api/move', async (req, res) => {
 
         if (config.type === 'local') {
             await Promise.all(items.map(async itemPath => {
-                // ... (existing move logic) ...
-                const safeItem = path.normalize(itemPath).replace(/^(\.\.[/\\])+/, ''); // Simplified relative
-                const absItem = path.join(STORAGE_DIR, safeItem);
-                
+                const absItem = resolveSafePath(itemPath);
                 // Destination is a FOLDER in move API
-                const safeDest = path.normalize(destination).replace(/^(\.\.[/\\])+/, '');
-                const absDestDir = path.join(STORAGE_DIR, safeDest);
-                const absNewPath = path.join(absDestDir, path.basename(safeItem));
+                const absDestDir = resolveSafePath(destination);
+                const absNewPath = path.join(absDestDir, path.basename(absItem));
                 
+                console.log(`[Move] ${absItem} -> ${absNewPath}`);
                 if (absItem !== absNewPath) await fs.move(absItem, absNewPath, { overwrite: true });
             }));
         } else {
@@ -449,6 +455,7 @@ app.post('/api/move', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
+        console.error('[Move Error]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -515,19 +522,18 @@ app.post('/api/transfer', async (req, res) => {
 app.post('/api/rename', async (req, res) => {
     try {
         const { oldPath, newName, path: currentPath, drive: driveId = 'local' } = req.body;
+        console.log(`[DEBUG] POST /api/rename old="${oldPath}" new="${newName}" drive="${driveId}"`);
         if (!oldPath || !newName) return res.status(400).json({ error: 'Missing parameters' });
 
         const config = await getDriveConfig(driveId);
 
         if (config.type === 'local') {
-            // Local Rename
-            const safeOld = path.normalize(oldPath).replace(/^(\.\.[/\\])+/, '');
-            const absOld = path.join(STORAGE_DIR, safeOld);
-            
-            // Construct new path in the same directory
-            const safeDir = path.dirname(safeOld);
-            const absNew = path.join(STORAGE_DIR, safeDir, newName); // Same dir, new name
+            // Local Rename using resolveSafePath for consistency
+            const absOld = resolveSafePath(oldPath);
+            const absDir = path.dirname(absOld);
+            const absNew = path.join(absDir, newName); // Same dir, new name
 
+            console.log(`[Rename] ${absOld} -> ${absNew}`);
             await fs.rename(absOld, absNew);
         } else {
             // WebDAV Rename
@@ -548,40 +554,131 @@ app.post('/api/rename', async (req, res) => {
     }
 });
 
+// POST /api/prepare-drag (For Native Drag & Drop)
+app.post('/api/prepare-drag', async (req, res) => {
+    try {
+        const { items, drive: driveId = 'local' } = req.body;
+        console.log(`[Drag] Preparing ${items?.length} items from ${driveId}`);
+        
+        if (!items || items.length === 0) return res.json({ files: [] });
+
+        const config = await getDriveConfig(driveId);
+        const resolvedFiles = [];
+
+        if (config.type === 'local') {
+            // Return absolute local paths
+            for (const itemPath of items) {
+                const absPath = resolveSafePath(itemPath);
+                if (fs.existsSync(absPath)) {
+                    resolvedFiles.push(absPath);
+                }
+            }
+        } else {
+            // WebDAV: Download to Temp in Parallel
+            const client = getWebDAVClient(config);
+            const tempDir = path.join(os.tmpdir(), 'webdav-drag-cache');
+            await fs.ensureDir(tempDir);
+
+            // Parallelize downloads
+            const downloadPromises = items.map(async (itemPath) => {
+                try {
+                    const fileName = path.basename(itemPath);
+                    const tempFilePath = path.join(tempDir, fileName);
+                    
+                    console.log(`[Drag] Downloading ${itemPath} to ${tempFilePath}`);
+                    const content = await client.getFileContents(itemPath, { format: 'binary' });
+                    await fs.writeFile(tempFilePath, content);
+                    return tempFilePath;
+                } catch (e) {
+                    console.error(`[Drag] Failed to download ${itemPath}:`, e.message);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(downloadPromises);
+            resolvedFiles.push(...results.filter(p => p !== null));
+        }
+
+        res.json({ files: resolvedFiles });
+    } catch (err) {
+        console.error('[Drag Error]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Multer & Upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const { path: reqPath = '/', drive: driveId = 'local' } = req.query;
-        if (driveId === 'local') {
-            const uploadDir = path.join(STORAGE_DIR, path.normalize(reqPath).replace(/^(\.\.[/\\])+/, ''));
-            fs.ensureDirSync(uploadDir);
-            cb(null, uploadDir);
-        } else {
-            cb(null, '/tmp'); // Temp for remote upload
+        console.log(`[Upload] Destination check: drive=${driveId}, path=${reqPath}`);
+        
+        try {
+            if (driveId === 'local') {
+                const absPath = resolveSafePath(reqPath);
+                fs.ensureDirSync(absPath);
+                cb(null, absPath);
+            } else {
+                const tempDir = os.tmpdir();
+                cb(null, tempDir); 
+            }
+        } catch (e) {
+            console.error('[Upload] Destination Error:', e);
+            cb(e);
         }
     },
-    filename: (req, file, cb) => cb(null, Buffer.from(file.originalname, 'latin1').toString('utf8'))
+    filename: (req, file, cb) => {
+        // Fix UTF-8 filenames
+        const name = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        cb(null, name);
+    }
 });
-const upload = multer({ storage });
+
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 * 1024 } // 10GB limit example
+});
 
 app.post('/api/upload', upload.array('files'), async (req, res) => {
+    const uploadedFiles = req.files || [];
+    const { path: reqPath = '/', drive: driveId = 'local' } = req.query;
+    console.log(`[Upload] Processing ${uploadedFiles.length} files. Drive: ${driveId}`);
+
     try {
-        const { path: reqPath = '/', drive: driveId = 'local' } = req.query;
         const config = await getDriveConfig(driveId);
 
         if (config.type !== 'local') {
             const client = getWebDAVClient(config);
-            await Promise.all(req.files.map(async file => {
-                // Strip leading slash to avoid double slash with base URL
-                const cleanReqPath = reqPath.replace(/^\/+/, '');
-                const remotePath = path.posix.join(cleanReqPath, file.filename);
-                const fileBuffer = await fs.readFile(file.path);
-                await client.putFileContents(remotePath, fileBuffer);
-                await fs.remove(file.path); 
-            }));
+            
+            for (const file of uploadedFiles) {
+                try {
+                    console.log(`[Upload] Transferring to WebDAV: ${file.filename}`);
+                    // Ensure remote path is absolute (starts with /)
+                    // path.posix.join handles slash deduplication
+                    const remotePath = path.posix.join('/', reqPath, file.filename);
+                    
+                    const fileBuffer = await fs.readFile(file.path);
+                    await client.putFileContents(remotePath, fileBuffer);
+                    console.log(`[Upload] Success: ${remotePath}`);
+                } catch (e) {
+                    console.error(`[Upload] Failed to upload ${file.filename} to WebDAV:`, e);
+                    throw e; // Stop processing to report error
+                } finally {
+                    // Always cleanup temp file
+                    await fs.remove(file.path).catch(e => console.error('Failed to cleanup temp file:', e));
+                }
+            }
+        } else {
+             console.log('[Upload] Local files saved directly via Multer.');
         }
         res.json({ success: true });
     } catch (err) {
+        console.error('[Upload API Error]', err);
+        // Attempt cleanup on error for any remaining files
+        if (uploadedFiles.length > 0 && driveId !== 'local') {
+            for (const file of uploadedFiles) {
+                await fs.remove(file.path).catch(() => {});
+            }
+        }
         res.status(500).json({ error: err.message });
     }
 });
@@ -600,7 +697,10 @@ app.use(webdavServer.extensions.express('/webdav', server));
 
 // Serve static files from React app (for production/electron)
 const CLIENT_BUILD_PATH = path.join(__dirname, '../client/dist');
+console.log(`[Server] Checking Client Build Path: ${CLIENT_BUILD_PATH}`);
+
 if (fs.existsSync(CLIENT_BUILD_PATH)) {
+    console.log('[Server] Client Build found. Serving static files.');
     app.use(express.static(CLIENT_BUILD_PATH));
     
     // Handle SPA routing: return index.html for any unknown non-API routes
@@ -610,8 +710,11 @@ if (fs.existsSync(CLIENT_BUILD_PATH)) {
         }
         res.sendFile(path.join(CLIENT_BUILD_PATH, 'index.html'));
     });
+} else {
+    console.error(`[Server ERROR] Client Build NOT found at ${CLIENT_BUILD_PATH}`);
 }
 
-app.listen(PORT, () => {
-    console.log(`🚀 Multi-Drive Server running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Multi-Drive Server running at http://0.0.0.0:${PORT}`);
+    console.log(`[Server] User Data Path: ${APP_DATA_DIR}`);
 });

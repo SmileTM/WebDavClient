@@ -1,5 +1,5 @@
 {
-  "name": "webdev-client-pro",
+  "name": "webdav-client",
   "version": "1.0.0-beta.1",
   "description": "Local Cloud Drive Manager (Web + WebDAV)",
   "main": "electron/main.js",
@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "com.android.drive",
-    "productName": "WebDev Drive",
+    "productName": "WebDavClient",
     "mac": {
       "category": "public.app-category.utilities",
       "icon": "client/assets/icon.png",
@@ -25,6 +25,7 @@
       "electron/**/*",
       "server/**/*",
       "client/dist/**/*",
+      "client/assets/**/*",
       "package.json"
     ],
     "directories": {
