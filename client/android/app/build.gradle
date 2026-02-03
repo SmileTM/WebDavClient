@@ -3,6 +3,11 @@ apply plugin: 'com.android.application'
 android {
     namespace = "com.android.drive"
     compileSdk = rootProject.ext.compileSdkVersion
+
+    compileOptions {                                                                                                                                        │
+        sourceCompatibility JavaVersion.VERSION_21                                                                                                          │
+        targetCompatibility JavaVersion.VERSION_21                                                                                                          │
+    }
     defaultConfig {
         applicationId "com.android.drive"
         minSdkVersion rootProject.ext.minSdkVersion
