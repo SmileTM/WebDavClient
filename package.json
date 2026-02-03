@@ -16,6 +16,7 @@
     "productName": "WebDev Drive",
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "client/assets/icon.png",
       "target": [
         "dmg"
       ]

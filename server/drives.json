@@ -4,14 +4,5 @@
     "name": "Local Storage",
     "type": "local",
     "path": "./storage"
-  },
-  {
-    "type": "webdav",
-    "quota": null,
-    "name": "123",
-    "url": "https://dav.jianguoyun.com/dav/",
-    "username": "183637818@qq.com",
-    "password": "awfh5bj8hv4yuudc",
-    "id": "a310106b-3de8-4efa-b5a8-9a6851b7300d"
   }
 ]

@@ -20,6 +20,7 @@
     "@capacitor/preferences": "^8.0.0",
     "axios": "^1.6.0",
     "clsx": "^2.0.0",
+    "crypto-js": "^4.2.0",
     "date-fns": "^2.30.0",
     "framer-motion": "^10.16.4",
     "heic2any": "^0.0.4",

@@ -287,6 +287,37 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddDriveOpen, setIsAddDriveOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isGlobalSearch, setIsGlobalSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleGlobalSearch = async () => {
+      if (!searchQuery.trim()) return;
+      setIsSearching(true);
+      setIsGlobalSearch(true);
+      try {
+          if (api.searchItems) {
+              const results = await api.searchItems(searchQuery, activeDrive, '/'); 
+              setSearchResults(results);
+          } else {
+              alert("Global search not supported on mobile yet");
+              setIsGlobalSearch(false);
+          }
+      } catch (err) {
+          console.error(err);
+          alert('Search failed');
+          setIsGlobalSearch(false);
+      } finally {
+          setIsSearching(false);
+      }
+  };
+
+  useEffect(() => {
+      if (!searchQuery) {
+          setIsGlobalSearch(false);
+          setSearchResults([]);
+      }
+  }, [searchQuery]);
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'type', direction: 'asc' });
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
@@ -305,6 +336,10 @@ function App() {
   const PAGE_SIZE = 50;
   
   const fileInputRef = useRef(null);
+  
+  const isElectron = /Electron/.test(navigator.userAgent);
+  const isMac = /Mac/.test(navigator.platform);
+  const isMacDesktop = isElectron && isMac;
 
   const fetchDrives = () => {
     api.getDrives()
@@ -420,9 +455,11 @@ function App() {
   }, []); 
 
   // Filtered files
-  const filteredFiles = useMemo(() => files.filter(f => 
+  const filesToDisplay = isGlobalSearch ? searchResults : files;
+  const filteredFiles = useMemo(() => filesToDisplay.filter(f => 
+    // Always filter by query (refine global results or filter local files)
     f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ), [files, searchQuery]);
+  ), [filesToDisplay, searchQuery]);
 
   // Sorted files
   const sortedFiles = useMemo(() => {
@@ -706,7 +743,10 @@ function App() {
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="flex flex-col h-full p-4">
-          <div className="flex items-center gap-2 px-2 py-4 mb-6">
+          <div className={clsx(
+            "flex items-center gap-2 px-2 py-4 mb-6",
+            isMacDesktop && "pl-16 pt-6" // Push title right/down for traffic lights
+          )}>
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white"><ServerStackIcon className="w-5 h-5" /></div>
             <span className="text-lg font-bold text-slate-800 tracking-tight">{t.appTitle}</span>
           </div>
@@ -818,7 +858,11 @@ function App() {
             {/* Search Input */}
             <div className="flex-1 relative group mx-1">
               <label htmlFor="search-files" className="sr-only">Search Files</label>
-              <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              {isSearching ? (
+                  <ArrowPathIcon className="w-5 h-5 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 animate-spin" />
+              ) : (
+                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              )}
               <input 
                 id="search-files"
                 name="search"
@@ -826,6 +870,7 @@ function App() {
                 placeholder={t.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch()}
                 className="w-full bg-slate-100/50 hover:bg-slate-100 focus:bg-white border-none rounded-full py-2 pl-10 pr-4 text-sm outline-none ring-1 ring-transparent focus:ring-indigo-500/20 transition-all placeholder:text-slate-400 text-slate-600"
               />
             </div>

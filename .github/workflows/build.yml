@@ -3,6 +3,7 @@ name: Build and Release
 on:
   push:
     branches: [ "master", "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "master", "main" ]
   workflow_dispatch:
@@ -85,10 +86,39 @@ jobs:
       - name: Build Electron App
         # Assuming build targets linux by default on ubuntu-latest. 
         # Configure targets in package.json or command line if needed (e.g. --linux --mac --win)
-        run: npm run electron:build 
-
+        run: npm run electron:build -- -p never
       - name: Upload Electron Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: electron-dist
           path: dist-electron/
+
+  release:
+    name: Create Release
+    needs: [build-android, build-electron]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release-apk
+          path: release-artifacts/android
+
+      - name: Download Electron Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-dist
+          path: release-artifacts/electron
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-artifacts/android/*.apk
+            release-artifacts/electron/*.AppImage
+            release-artifacts/electron/*.deb
+            release-artifacts/electron/*.exe
+            release-artifacts/electron/*.dmg
+            release-artifacts/electron/*.zip
+          generate_release_notes: true

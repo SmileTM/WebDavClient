@@ -8,6 +8,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+
     defaultConfig {
         applicationId "com.android.drive"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -49,11 +50,7 @@ android {
     }
 }
 
-repositories {
-    flatDir{
-        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
-    }
-}
+
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')

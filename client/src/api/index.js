@@ -4,6 +4,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import { createClient } from 'webdav';
 import { Buffer } from 'buffer';
+import { encrypt, decrypt } from '../utils/clientCrypto';
 
 // --- Native Plugin Interface ---
 const WebDavNative = registerPlugin('WebDavNative');
@@ -293,14 +294,17 @@ class NativeWebDAVClient {
 const getWebDAVClient = (driveConfig) => {
     console.log(`[WebDAV] Creating client for: ${driveConfig.url}`);
     
+    // Decrypt password (handles both encrypted storage and plain text form input)
+    const password = decrypt(driveConfig.password);
+
     // If on Mobile (Native), use our Custom Native Client
     if (Capacitor.isNativePlatform()) {
-        return new NativeWebDAVClient(driveConfig);
+        return new NativeWebDAVClient({ ...driveConfig, password });
     }
 
     return createClient(driveConfig.url, {
         username: driveConfig.username,
-        password: driveConfig.password
+        password: password
     });
 };
 
@@ -335,6 +339,20 @@ const ServerAPI = {
   moveItems: async (items, destination, driveId) => {
     await axios.post('/api/move', { items, destination, drive: driveId });
   },
+  crossDriveTransfer: async (items, sourceDriveId, destPath, destDriveId, isMove = false, onProgress) => {
+      for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const fileName = item.split('/').pop();
+          if (onProgress) onProgress(i + 1, items.length, fileName);
+          await axios.post('/api/transfer', {
+              items: [item],
+              sourceDrive: sourceDriveId,
+              destDrive: destDriveId,
+              destPath: destPath,
+              move: isMove
+          });
+      }
+  },
   uploadFiles: async (path, files, driveId) => {
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
@@ -367,6 +385,10 @@ const ServerAPI = {
   readFileText: async (path, driveId) => {
       const res = await axios.get(`/api/raw?path=${encodeURIComponent(path)}&drive=${driveId}`, { responseType: 'text' });
       return res.data;
+  },
+  searchItems: async (query, driveId, rootPath = '/') => {
+    const res = await axios.get(`/api/search?query=${encodeURIComponent(query)}&drive=${driveId}&path=${encodeURIComponent(rootPath)}`);
+    return res.data;
   }
 };
 
@@ -722,7 +744,9 @@ const NativeAPI = {
 
   addDrive: async (drive) => {
     const drives = await NativeAPI.getDrives();
-    const newDrive = { ...drive, id: crypto.randomUUID() };
+    // Encrypt password before storage
+    const encryptedPassword = encrypt(drive.password);
+    const newDrive = { ...drive, password: encryptedPassword, id: crypto.randomUUID() };
     drives.push(newDrive);
     await Preferences.set({ key: 'drives', value: JSON.stringify(drives) });
     return newDrive;
@@ -812,6 +836,26 @@ const NativeAPI = {
           encoding: Encoding.UTF8
       });
       return file.data;
+  },
+
+  searchItems: async (query, driveId, rootPath = '/') => {
+    if (driveId !== 'local') {
+        return []; // WebDAV search not supported on mobile
+    }
+    try {
+        const res = await WebDavNative.search({ query });
+        return res.items.map(item => ({
+            name: item.name,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            size: item.size,
+            mtime: item.mtime,
+            type: item.isDirectory ? 'folder' : 'application/octet-stream'
+        }));
+    } catch (e) {
+        console.warn('[Native] Search failed:', e);
+        return [];
+    }
   }
 };
 

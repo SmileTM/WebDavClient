@@ -79,6 +79,67 @@ public class WebDavPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void search(PluginCall call) {
+        String query = call.getString("query");
+        if (query == null || query.isEmpty()) {
+            JSObject ret = new JSObject();
+            ret.put("items", new com.getcapacitor.JSArray());
+            call.resolve(ret);
+            return;
+        }
+
+        final int LIMIT = 100;
+        final long TIME_LIMIT = 5000;
+        final long startTime = System.currentTimeMillis();
+
+        File root = Environment.getExternalStorageDirectory();
+        String rootPath = root.getAbsolutePath();
+        com.getcapacitor.JSArray results = new com.getcapacitor.JSArray();
+
+        // Use a simple stack for iteration to avoid recursion depth issues or complex inner class
+        java.util.Stack<File> stack = new java.util.Stack<>();
+        stack.push(root);
+
+        int count = 0;
+
+        while (!stack.isEmpty()) {
+            if (count >= LIMIT || System.currentTimeMillis() - startTime > TIME_LIMIT) break;
+            
+            File dir = stack.pop();
+            File[] files = dir.listFiles();
+            if (files == null) continue;
+
+            for (File f : files) {
+                if (f.getName().startsWith(".")) continue;
+                if (count >= LIMIT || System.currentTimeMillis() - startTime > TIME_LIMIT) break;
+
+                if (f.getName().toLowerCase().contains(query.toLowerCase())) {
+                    JSObject item = new JSObject();
+                    item.put("name", f.getName());
+                    String fullPath = f.getAbsolutePath();
+                    String relPath = fullPath.startsWith(rootPath) ? fullPath.substring(rootPath.length()) : fullPath;
+                    if (!relPath.startsWith("/")) relPath = "/" + relPath;
+                    
+                    item.put("path", relPath);
+                    item.put("isDirectory", f.isDirectory());
+                    item.put("size", f.length());
+                    item.put("mtime", f.lastModified());
+                    results.put(item);
+                    count++;
+                }
+
+                if (f.isDirectory()) {
+                    stack.push(f);
+                }
+            }
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("items", results);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
     public void request(PluginCall call) {
         String url = call.getString("url");
         String method = call.getString("method", "GET");
