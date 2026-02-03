@@ -1,0 +1,54 @@
+{
+  "name": "webdev-client-pro",
+  "version": "1.0.0-beta.1",
+  "description": "Local Cloud Drive Manager (Web + WebDAV)",
+  "main": "electron/main.js",
+  "scripts": {
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently \"npm run server --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "electron:dev": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.android.drive",
+    "productName": "WebDev Drive",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ]
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "client/dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist-electron"
+    },
+    "asar": true
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.1",
+    "mime-types": "^2.1.35",
+    "multer": "^1.4.5-lts.1",
+    "wait-on": "^7.2.0",
+    "webdav": "^5.6.0",
+    "webdav-server": "^2.6.2"
+  },
+  "overrides": {
+    "fast-xml-parser": "5.3.4"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^40.1.0",
+    "electron-builder": "^26.7.0",
+    "kill-port": "^2.0.1"
+  }
+}

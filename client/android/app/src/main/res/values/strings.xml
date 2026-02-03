@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WebDavClient</string>
+    <string name="title_activity_main">WebDavClient</string>
+    <string name="package_name">com.android.drive</string>
+    <string name="custom_url_scheme">com.android.drive</string>
+</resources>

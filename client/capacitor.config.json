@@ -1,0 +1,10 @@
+{
+  "appId": "com.android.drive",
+  "appName": "WebDavClient",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": false
+    }
+  }
+}
