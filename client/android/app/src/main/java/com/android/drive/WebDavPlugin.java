@@ -25,6 +25,17 @@ import android.net.Uri;
 import android.provider.Settings;
 import android.os.Build;
 
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.io.FileInputStream;
+
 @CapacitorPlugin(name = "WebDavNative")
 public class WebDavPlugin extends Plugin {
 
@@ -33,6 +44,128 @@ public class WebDavPlugin extends Plugin {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build();
+
+    private LocalFileServer localServer;
+
+    @Override
+    public void load() {
+        super.load();
+        try {
+            localServer = new LocalFileServer();
+            localServer.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @PluginMethod
+    public void getServerUrl(PluginCall call) {
+        if (localServer != null && localServer.getPort() > 0) {
+            JSObject ret = new JSObject();
+            ret.put("url", "http://127.0.0.1:" + localServer.getPort());
+            call.resolve(ret);
+        } else {
+            call.reject("Server not running");
+        }
+    }
+
+    private class LocalFileServer extends Thread {
+        private ServerSocket serverSocket;
+        private int port;
+        private boolean isRunning = true;
+
+        public LocalFileServer() throws IOException {
+            serverSocket = new ServerSocket(0);
+            port = serverSocket.getLocalPort();
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        @Override
+        public void run() {
+            while (isRunning) {
+                try {
+                    Socket socket = serverSocket.accept();
+                    new Thread(() -> handleClient(socket)).start();
+                } catch (IOException e) {
+                    if (isRunning) e.printStackTrace();
+                }
+            }
+        }
+
+        private void handleClient(Socket socket) {
+            try (InputStream in = socket.getInputStream();
+                 OutputStream out = socket.getOutputStream()) {
+                
+                BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                String requestLine = reader.readLine();
+                if (requestLine == null) return;
+
+                String[] parts = requestLine.split(" ");
+                if (parts.length < 2) return;
+                
+                String path = parts[1];
+                
+                long rangeStart = 0;
+                long rangeEnd = -1;
+                String line;
+                while ((line = reader.readLine()) != null && !line.isEmpty()) {
+                    if (line.toLowerCase().startsWith("range:")) {
+                        Pattern p = Pattern.compile("bytes=(\\d+)-(\\d*)");
+                        Matcher m = p.matcher(line.toLowerCase());
+                        if (m.find()) {
+                            rangeStart = Long.parseLong(m.group(1));
+                            if (!m.group(2).isEmpty()) {
+                                rangeEnd = Long.parseLong(m.group(2));
+                            }
+                        }
+                    }
+                }
+
+                path = java.net.URLDecoder.decode(path, "UTF-8");
+                File root = Environment.getExternalStorageDirectory();
+                File file = new File(root, path);
+
+                if (!file.getCanonicalPath().startsWith(root.getCanonicalPath()) || !file.exists() || !file.isFile()) {
+                    String response = "HTTP/1.1 404 Not Found\r\n\r\n";
+                    out.write(response.getBytes());
+                    return;
+                }
+
+                long fileLength = file.length();
+                if (rangeEnd == -1) rangeEnd = fileLength - 1;
+                long contentLength = rangeEnd - rangeStart + 1;
+
+                StringBuilder headers = new java.lang.StringBuilder();
+                headers.append("HTTP/1.1 206 Partial Content\r\n");
+                headers.append("Content-Type: video/mp4\r\n"); 
+                headers.append("Accept-Ranges: bytes\r\n");
+                headers.append("Content-Length: ").append(contentLength).append("\r\n");
+                headers.append("Content-Range: bytes ").append(rangeStart).append("-").append(rangeEnd).append("/").append(fileLength).append("\r\n");
+                headers.append("Access-Control-Allow-Origin: *\r\n");
+                headers.append("\r\n");
+                out.write(headers.toString().getBytes());
+
+                try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+                    raf.seek(rangeStart);
+                    byte[] buffer = new byte[8192];
+                    long bytesToRead = contentLength;
+                    while (bytesToRead > 0) {
+                        int read = raf.read(buffer, 0, (int) Math.min(buffer.length, bytesToRead));
+                        if (read == -1) break;
+                        out.write(buffer, 0, read);
+                        bytesToRead -= read;
+                    }
+                }
+
+            } catch (Exception e) {
+            } finally {
+                try { socket.close(); } catch (IOException e) {}
+            }
+        }
+    }
 
     @PluginMethod
     public void requestManageStoragePermission(PluginCall call) {
@@ -137,6 +270,72 @@ public class WebDavPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("items", results);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void listDirectory(PluginCall call) {
+        String path = call.getString("path");
+        if (path == null) {
+            call.reject("Path is required");
+            return;
+        }
+
+        File root = Environment.getExternalStorageDirectory();
+        File dir = new File(root, path);
+
+        if (!dir.exists() || !dir.isDirectory()) {
+            call.reject("Directory does not exist");
+            return;
+        }
+
+        File[] files = dir.listFiles();
+        com.getcapacitor.JSArray results = new com.getcapacitor.JSArray();
+
+        if (files != null) {
+            for (File f : files) {
+                JSObject item = new JSObject();
+                item.put("name", f.getName());
+                item.put("isDirectory", f.isDirectory());
+                item.put("size", f.length());
+                item.put("mtime", f.lastModified());
+                results.put(item);
+            }
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("items", results);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void createDirectory(PluginCall call) {
+        String path = call.getString("path");
+        if (path == null) {
+            call.reject("Path is required");
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                call.reject("Manage All Files permission is required");
+                return;
+            }
+        }
+
+        File root = Environment.getExternalStorageDirectory();
+        File dir = new File(root, path);
+
+        if (dir.exists()) {
+            call.resolve();
+            return;
+        }
+
+        boolean success = dir.mkdirs();
+        if (success) {
+            call.resolve();
+        } else {
+            call.reject("Failed to create directory: " + dir.getAbsolutePath());
+        }
     }
 
     @PluginMethod

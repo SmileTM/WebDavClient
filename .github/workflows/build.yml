@@ -90,7 +90,7 @@ jobs:
         run: npm run install-all
 
       - name: Build Electron App
-        # Assuming build targets linux by default on ubuntu-latest.
+        # Assuming build targets linux by default on ubuntu-latest. 
         # Configure targets in package.json or command line if needed (e.g. --linux --mac --win)
         run: npm run electron:build -- -p never
       - name: Upload Electron Artifacts
@@ -103,7 +103,7 @@ jobs:
     name: Create Release
     needs: [build-android, build-electron]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -122,13 +122,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           files: |
             release-artifacts/android/**/*.apk
-            release-artifacts/electron/*.AppImage
-            release-artifacts/electron/*.deb
-            release-artifacts/electron/*.exe
             release-artifacts/electron/*.dmg
             release-artifacts/electron/*.zip
+            release-artifacts/electron/*.exe
           generate_release_notes: true

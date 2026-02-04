@@ -22,3 +22,14 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: #cbd5e1; 
 }
+
+/* Glass Effect Compatibility */
+.glass-blur {
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+}
+
+.glass-bg-default { background-color: rgba(255, 255, 255, 0.3); }
+.glass-bg-select { background-color: rgba(255, 255, 255, 0.4); }
+.glass-bg-expanded { background-color: rgba(255, 255, 255, 0.5); }
+.glass-bg-clipboard { background-color: rgba(238, 242, 255, 0.4); }

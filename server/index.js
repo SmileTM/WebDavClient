@@ -7,6 +7,7 @@ const fs = require('fs-extra');
 const os = require('os');
 const mime = require('mime-types');
 const multer = require('multer');
+const sharp = require('sharp');
 const { encrypt, decrypt } = require('./utils/crypto');
 
 const app = express();
@@ -14,6 +15,59 @@ const PORT = process.env.PORT || 8000;
 const STORAGE_DIR = os.homedir(); // Default to User Home directory
 const APP_DATA_DIR = process.env.USER_DATA_PATH || path.join(os.homedir(), '.webdav-client');
 const CONFIG_FILE = path.join(APP_DATA_DIR, 'drives.json');
+// ...
+// ...
+
+// GET /api/preview (Image Preview & Conversion)
+app.get('/api/preview', async (req, res) => {
+    try {
+        const { path: reqPath, drive: driveId = 'local' } = req.query;
+        if (!reqPath) return res.status(400).send('Path required');
+        const config = await getDriveConfig(driveId);
+        
+        const fileName = path.basename(reqPath);
+        const isHeic = /\.(heic|heif)$/i.test(fileName);
+        
+        // Setup Source Stream
+        let inputStream;
+        if (config.type === 'local') {
+             const absPath = resolveSafePath(reqPath);
+             inputStream = fs.createReadStream(absPath);
+        } else {
+             const client = getWebDAVClient(config);
+             inputStream = client.createReadStream(reqPath);
+        }
+
+        if (isHeic) {
+            res.setHeader('Content-Type', 'image/jpeg');
+            const transform = sharp().toFormat('jpeg', { quality: 80 });
+            
+            inputStream
+                .on('error', err => {
+                     console.error('[Preview Stream Error]', err);
+                     if (!res.headersSent) res.status(502).end();
+                })
+                .pipe(transform)
+                .on('error', err => {
+                     console.error('[Preview Convert Error]', err);
+                     // If conversion fails, maybe stream original? 
+                     // But header is already jpeg.
+                     if (!res.headersSent) res.status(500).end();
+                })
+                .pipe(res);
+        } else {
+            // Passthrough for standard images (or could resize here too)
+            const mimeType = mime.lookup(fileName) || 'application/octet-stream';
+            res.setHeader('Content-Type', mimeType);
+            inputStream.pipe(res);
+        }
+
+    } catch (err) {
+        console.error('[Preview API Error]', err);
+        if (!res.headersSent) res.status(500).send(err.message);
+    }
+});
+
 
 // Ensure storage directory exists
 fs.ensureDirSync(STORAGE_DIR);
@@ -253,12 +307,22 @@ app.get('/api/files', async (req, res) => {
                 const fullPath = path.join(absolutePath, file);
                 const relPath = path.join('/', safePath, file); // Ensure absolute Web path
                 const stats = await fs.stat(fullPath);
+                
+                let itemCount = undefined;
+                if (stats.isDirectory()) {
+                    try {
+                        const children = await fs.readdir(fullPath);
+                        itemCount = children.filter(c => !c.startsWith('.')).length;
+                    } catch (e) { itemCount = 0; }
+                }
+
                 return {
                     name: file,
                     path: relPath, // Return consistent path format
                     isDirectory: stats.isDirectory(),
                     size: stats.size,
                     mtime: stats.mtime,
+                    itemCount: itemCount,
                     type: stats.isDirectory() ? 'folder' : mime.lookup(fullPath) || 'application/octet-stream'
                 };
             }));
@@ -365,21 +429,82 @@ app.get('/api/raw', async (req, res) => {
             res.sendFile(resolveSafePath(reqPath));
         } else {
             const client = getWebDAVClient(config);
-            // Stream from remote WebDAV to client
-            const stream = client.createReadStream(reqPath);
-            const fileName = path.basename(reqPath);
-            res.setHeader('Content-Type', mime.lookup(fileName) || 'application/octet-stream');
             
-            stream.on('error', (streamErr) => {
-                console.error('Stream Error:', streamErr);
-                if (!res.headersSent) res.status(502).send('Proxy Stream Error');
-                else res.end(); // Close connection if headers already sent
-            });
+            const options = {
+                method: 'GET',
+                headers: {},
+                responseType: 'stream',
+                // Important: validateStatus to allow 2xx and others like 416 to be handled manually if needed
+                // But webdav lib might wrap axios. Let's try basic usage.
+            };
 
-            stream.pipe(res);
+            // Forward Range Header
+            if (req.headers.range) {
+                options.headers['Range'] = req.headers.range;
+            }
+
+            try {
+                // Use customRequest to bypass potential createReadStream limitations
+                // and get full access to upstream response headers/status
+                const response = await client.customRequest(reqPath, options);
+                
+                // Forward Status (200, 206, etc.)
+                res.status(response.status);
+                
+                // Forward specific headers
+                const forwardHeaders = [
+                    'content-type',
+                    'content-length',
+                    'content-range',
+                    'accept-ranges',
+                    'last-modified',
+                    'etag'
+                ];
+                
+                forwardHeaders.forEach(key => {
+                    // Headers in axios response are lower-cased
+                    const val = response.headers[key];
+                    if (val) res.setHeader(key, val);
+                });
+
+                // Fallback Content-Type if upstream didn't send one
+                if (!response.headers['content-type']) {
+                    const fileName = path.basename(reqPath);
+                    const mimeType = mime.lookup(fileName) || 'application/octet-stream';
+                    res.setHeader('Content-Type', mimeType);
+                }
+
+                response.data.pipe(res);
+                
+                response.data.on('error', (streamErr) => {
+                    console.error('Upstream Stream Error:', streamErr);
+                    // Don't send error if headers already sent (stream interruption)
+                });
+
+            } catch (err) {
+                // Handle Upstream Errors (404, 416, 401, etc.)
+                if (err.response) {
+                    res.status(err.response.status);
+                    // Forward headers for error response too (like Content-Range for 416)
+                    const errHeaders = ['content-range', 'content-length', 'content-type'];
+                    errHeaders.forEach(key => {
+                        if (err.response.headers[key]) res.setHeader(key, err.response.headers[key]);
+                    });
+                    
+                    if (err.response.data && typeof err.response.data.pipe === 'function') {
+                        err.response.data.pipe(res);
+                    } else {
+                        res.send(err.message);
+                    }
+                } else {
+                    console.error('[WebDAV Raw Error]', err.message);
+                    res.status(502).send('Proxy Error: ' + err.message);
+                }
+            }
         }
     } catch (err) {
-        res.status(500).send(err.message);
+        console.error('[Raw API Error]', err);
+        if (!res.headersSent) res.status(500).send(err.message);
     }
 });
 

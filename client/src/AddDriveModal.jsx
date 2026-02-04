@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from './api';
 import clsx from 'clsx';
+import { motion } from 'framer-motion';
 // import { XMarkIcon, ServerStackIcon } from '@heroicons/react/24/outline';
 import { translations } from './i18n';
 
@@ -80,73 +81,86 @@ const AddDriveModal = ({ onClose, onAdded, lang = 'en' }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white/90 backdrop-blur-2xl rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-white/20 p-6 flex flex-col gap-4"
+      >
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center justify-between pb-2">
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <span className="text-xl">☁️</span>
+            <span className="text-2xl">☁️</span>
             {t.modalTitle}
           </h2>
-          <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100/50 text-slate-400 hover:text-slate-600 transition-colors">
             <span>✕</span>
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           
           <div>
-            <label htmlFor="drive-name" className="block text-xs font-medium text-slate-500 mb-1">{t.displayName}</label>
+            <label htmlFor="drive-name" className="block text-xs font-medium text-slate-500 mb-1 ml-1">{t.displayName}</label>
             <input 
               id="drive-name"
               name="name"
               type="text" 
               placeholder="e.g. My Drive"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm"
+              className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm text-slate-700"
               value={formData.name}
               onChange={e => setFormData({...formData, name: e.target.value})}
             />
           </div>
 
           <div>
-            <label htmlFor="drive-url" className="block text-xs font-medium text-slate-500 mb-1">{t.webdavUrl}</label>
+            <label htmlFor="drive-url" className="block text-xs font-medium text-slate-500 mb-1 ml-1">{t.webdavUrl}</label>
             <input 
               id="drive-url"
               name="url"
               type="url" 
               placeholder="https://dav.example.com/webdav/"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm"
+              className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm text-slate-700"
               value={formData.url}
               onChange={e => setFormData({...formData, url: e.target.value})}
             />
-            <p className="mt-1 text-[10px] text-slate-400">
+            <p className="mt-1.5 text-[10px] text-slate-400 ml-1">
               {t.tipRoot}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="drive-username" className="block text-xs font-medium text-slate-500 mb-1">{t.username}</label>
+              <label htmlFor="drive-username" className="block text-xs font-medium text-slate-500 mb-1 ml-1">{t.username}</label>
               <input 
                 id="drive-username"
                 name="username"
                 type="text" 
                 autoComplete="username"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm"
+                className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm text-slate-700"
                 value={formData.username}
                 onChange={e => setFormData({...formData, username: e.target.value})}
               />
             </div>
             <div>
-              <label htmlFor="drive-password" className="block text-xs font-medium text-slate-500 mb-1">{t.password}</label>
+              <label htmlFor="drive-password" className="block text-xs font-medium text-slate-500 mb-1 ml-1">{t.password}</label>
               <input 
                 id="drive-password"
                 name="password"
                 type="password" 
                 autoComplete="current-password"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm"
+                className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 outline-none transition-all text-sm text-slate-700"
                 value={formData.password}
                 onChange={e => setFormData({...formData, password: e.target.value})}
               />
@@ -156,20 +170,20 @@ const AddDriveModal = ({ onClose, onAdded, lang = 'en' }) => {
           {/* Status Message */}
           {testStatus.type !== 'idle' && (
             <div className={clsx(
-              "text-xs px-3 py-2 rounded-lg",
-              testStatus.type === 'success' ? "bg-green-50 text-green-600" : 
-              testStatus.type === 'error' ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-500"
+              "text-xs px-4 py-3 rounded-2xl text-center font-medium",
+              testStatus.type === 'success' ? "bg-green-50 text-green-600 border border-green-100" : 
+              testStatus.type === 'error' ? "bg-red-50 text-red-600 border border-red-100" : "bg-slate-50 text-slate-500 border border-slate-100"
             )}>
               {testStatus.msg}
             </div>
           )}
 
-          <div className="pt-2 flex justify-end gap-2">
+          <div className="pt-2 flex justify-end gap-3">
             <button 
               type="button" 
               onClick={handleTest}
               disabled={testStatus.type === 'testing'}
-              className="mr-auto px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+              className="mr-auto px-5 py-3 rounded-2xl text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
             >
               {t.testConnection}
             </button>
@@ -177,23 +191,22 @@ const AddDriveModal = ({ onClose, onAdded, lang = 'en' }) => {
             <button 
               type="button" 
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+              className="px-5 py-3 rounded-2xl text-sm font-medium border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
             >
               {t.cancel}
             </button>
             <button 
               type="submit" 
               disabled={loading}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 transition-all shadow-md shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 rounded-2xl text-sm font-medium bg-indigo-500 text-white hover:bg-indigo-600 active:scale-95 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? t.adding : t.connectDrive}
             </button>
           </div>
 
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
-
 export default AddDriveModal;

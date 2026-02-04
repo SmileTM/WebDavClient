@@ -12,8 +12,8 @@
       "filters": [],
       "attributes": [],
       "versionCode": 1,
-      "versionName": "beta-1.0",
-      "outputFile": "WebDavDrive-beta-1.0.apk"
+      "versionName": "1.0.0-beta",
+      "outputFile": "WebDavClient-1.0.0-beta.apk"
     }
   ],
   "elementType": "File",
@@ -22,14 +22,14 @@
       "minApi": 28,
       "maxApi": 30,
       "baselineProfiles": [
-        "baselineProfiles/1/WebDavDrive-beta-1.0.dm"
+        "baselineProfiles/1/WebDavClient-1.0.0-beta.dm"
       ]
     },
     {
       "minApi": 31,
       "maxApi": 2147483647,
       "baselineProfiles": [
-        "baselineProfiles/0/WebDavDrive-beta-1.0.dm"
+        "baselineProfiles/0/WebDavClient-1.0.0-beta.dm"
       ]
     }
   ],

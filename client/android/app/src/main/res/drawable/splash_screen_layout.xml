@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Solid white background -->
+    <item>
+        <color android:color="@android:color/white"/>
+    </item>
+    
+    <!-- Centered Logo (Assuming we use the app icon, but let's use a vector wrapper or just the icon bitmap) -->
+    <!-- For simplicity, let's use the mipmap icon which is circular by default in many adaptive setups, 
+         or we can define a shape. User wants "Circular logo, no background". 
+         Actually, we can't animate the window background drawable directly like "rotate". 
+         Window backgrounds are static.
+         
+         To achieve "rotate and expand", we need a custom Splash Activity or Layout.
+         However, Capacitor uses a Splash Screen plugin or Theme.
+         
+         If we change the Theme background, it's static.
+         
+         The user wants: "Round logo, no background (transparent?), gradually rotate and expand".
+         
+         Capacitor Splash Screen API (v4+) uses Android 12 Splash Screen API on newer devices, 
+         which supports an icon animation.
+         
+         For older devices (or standard Capacitor compat), it shows a static drawable.
+         
+         If we want a complex animation (Rotate + Expand), we usually need:
+         1. A dedicated SplashActivity.
+         2. An AnimatedVectorDrawable (AVD) for the icon (Android 12+ style).
+         
+         Let's try to set up an Animated Vector Drawable approach which works well with the new SplashScreen API.
+         
+         But first, let's look at `styles.xml`. It uses `Theme.SplashScreen` which is the androidx compat library.
+         
+         I will modify `themes.xml` (or `styles.xml`) to use an animated icon.
+         
+         Step 1: Create a simple circular logo vector (if not exists).
+         Step 2: Create an animated-vector that rotates and scales it.
+         Step 3: Apply it to `windowSplashScreenAnimatedIcon`.
+         
+         Let's check if we have a vector logo. `ic_launcher_background.xml` exists.
+         We probably have `ic_launcher_foreground.xml`.
+    -->
+    <item android:gravity="center">
+        <mipmap android:src="@mipmap/ic_launcher_round"/> 
+    </item>
+</layer-list>

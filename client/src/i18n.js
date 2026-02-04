@@ -25,6 +25,7 @@ export const translations = {
     noDrives: "No drives (Server offline?)",
     confirmRemoveDrive: "Remove this drive?",
     confirmDeleteItems: "Delete {count} items?",
+    confirmDeleteNonEmptyFolder: "Selected folder(s) are not empty. Are you sure you want to delete them and all their contents?",
     confirmOverwrite: "Overwrite {count} existing files?",
     uploadFailed: "Upload failed",
     deleteFailed: "Delete failed",
@@ -63,7 +64,15 @@ export const translations = {
     // Sort
     name: "Name",
     date: "Date",
-    type: "Type"
+    type: "Type",
+    size: "Size",
+    items: "{count} items",
+    // Details
+    details: "Details",
+    fileInfo: "File Information",
+    path: "Path",
+    modified: "Modified",
+    location: "Location"
   },
   zh: {
     appTitle: "云盘管理",
@@ -91,6 +100,7 @@ export const translations = {
     noDrives: "无网盘 (服务离线?)",
     confirmRemoveDrive: "确定移除此网盘吗？",
     confirmDeleteItems: "确定删除 {count} 项吗？",
+    confirmDeleteNonEmptyFolder: "所选文件夹中包含文件，确定要删除文件夹及其所有内容吗？",
     confirmOverwrite: "覆盖 {count} 个已存在的文件？",
     uploadFailed: "上传失败",
     deleteFailed: "删除失败",
@@ -129,6 +139,14 @@ export const translations = {
     // Sort
     name: "名称",
     date: "日期",
-    type: "类型"
+    type: "类型",
+    size: "大小",
+    items: "{count} 项",
+    // Details
+    details: "详情",
+    fileInfo: "文件信息",
+    path: "路径",
+    modified: "修改时间",
+    location: "位置"
   }
 };

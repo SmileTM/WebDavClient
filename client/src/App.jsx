@@ -30,12 +30,15 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   GlobeAltIcon,
-  DocumentDuplicateIcon
+  DocumentDuplicateIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import PreviewModal from './PreviewModal';
 import AddDriveModal from './AddDriveModal';
 import InputModal from './InputModal';
+import DetailsModal from './DetailsModal';
+import ConfirmModal from './ConfirmModal';
 import { translations } from './i18n';
 
 // --- Icons Helper ---
@@ -56,7 +59,7 @@ const formatSize = (bytes) => {
 
 // --- Components ---
 
-const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handleMove, viewMode, onPreview, activeDrive, isSelectionMode }) => {
+const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handleMove, viewMode, onPreview, activeDrive, isSelectionMode, showPath, t }) => {
   const isSelected = selectedPaths.has(file.path);
   const fullPath = file.path;
   const [isDragOver, setIsDragOver] = useState(false);
@@ -67,8 +70,12 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
   const [thumbnailUrl, setThumbnailUrl] = useState('');
 
   // Safe Thumbnail Logic
-  const isImage = !file.isDirectory && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(file.name);
+  const isImage = !file.isDirectory && /\.(jpg|jpeg|png|gif|webp|svg|bmp|heic|heif)$/i.test(file.name);
   const isPDF = !file.isDirectory && /\.pdf$/i.test(file.name);
+
+  const itemInfo = file.isDirectory 
+      ? (file.itemCount !== undefined ? t.items.replace('{count}', file.itemCount) : t.folder)
+      : formatSize(file.size);
 
   useEffect(() => {
     let active = true;
@@ -76,7 +83,7 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
         // Delay slightly to prioritize UI render
         const load = async () => {
             try {
-                const url = await api.getFileUrl(file.path, activeDrive || 'local');
+                const url = await api.getThumbnailUrl(file.path, activeDrive || 'local');
                 if (active && url) setThumbnailUrl(url);
             } catch (e) {
                 // Ignore error
@@ -238,16 +245,21 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
           )}>
             {file.name}
           </h3>
+          {showPath && (
+            <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5 opacity-70">
+              {file.path}
+            </p>
+          )}
           {!isList && (
             <p className="text-[9px] text-slate-400 mt-0.5 truncate leading-none">
-              {file.isDirectory ? 'Folder' : formatSize(file.size)} • {new Date(file.mtime).toLocaleDateString()}
+              {itemInfo} • {new Date(file.mtime).toLocaleDateString()}
             </p>
           )}
         </div>
 
         {isList && (
           <div className="flex flex-col items-end text-right shrink-0 leading-tight">
-            <span className="text-[10px] text-slate-500 tabular-nums">{file.isDirectory ? 'Folder' : formatSize(file.size)}</span>
+            <span className="text-[10px] text-slate-500 tabular-nums">{itemInfo}</span>
             <span className="text-[9px] text-slate-400 tabular-nums">{new Date(file.mtime).toLocaleDateString()}</span>
           </div>
         )}
@@ -331,6 +343,8 @@ function App() {
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [progress, setProgress] = useState(null); 
   const [inputModal, setInputModal] = useState({ isOpen: false, title: '', defaultValue: '', onConfirm: () => {} });
+  const [detailsModal, setDetailsModal] = useState(null);
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', type: 'info', onConfirm: () => {} });
 
   // Language State
   const [lang, setLang] = useState(() => localStorage.getItem('app_lang') || 'zh');
@@ -359,7 +373,10 @@ function App() {
       .catch(() => setDrives([]));
   };
 
-  useEffect(() => { fetchDrives(); }, []);
+  useEffect(() => { 
+      fetchDrives(); 
+      if (api.requestPermissions) api.requestPermissions();
+  }, []);
 
   // Ref to keep handlers fresh
   const handleGoUpRef = useRef(null);
@@ -369,6 +386,10 @@ function App() {
   const fetchFilesRef = useRef(null); // fetchFiles is defined later
   const selectedPathsRef = useRef(selectedPaths);
   const previewFileRef = useRef(previewFile);
+  const detailsModalRef = useRef(detailsModal);
+  const isAddDriveOpenRef = useRef(isAddDriveOpen);
+  const confirmModalRef = useRef(confirmModal);
+  const inputModalRef = useRef(inputModal);
 
   // Note: specific useEffects to update these refs are moved to bottom of component to avoid TDZ
 
@@ -379,6 +400,14 @@ function App() {
     const backListener = CapApp.addListener('backButton', ({ canGoBack }) => {
       if (previewFileRef.current) {
         setPreviewFile(null);
+      } else if (detailsModalRef.current) {
+        setDetailsModal(null);
+      } else if (confirmModalRef.current.isOpen) {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      } else if (inputModalRef.current.isOpen) {
+        setInputModal(prev => ({ ...prev, isOpen: false }));
+      } else if (isAddDriveOpenRef.current) {
+        setIsAddDriveOpen(false);
       } else if (isSidebarOpenRef.current) {
         setIsSidebarOpenRef.current(false);
       } else if (selectedPathsRef.current.size > 0) {
@@ -399,9 +428,15 @@ function App() {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         
+        const isAnyModalOpen = previewFileRef.current || 
+                               detailsModalRef.current || 
+                               confirmModalRef.current.isOpen || 
+                               inputModalRef.current.isOpen || 
+                               isAddDriveOpenRef.current;
+
         // Check if we are at the top of the scroll container
         const scrollContainer = document.getElementById('file-list-container');
-        if (scrollContainer && scrollContainer.scrollTop === 0) {
+        if (!isAnyModalOpen && scrollContainer && scrollContainer.scrollTop === 0) {
             isPulling = true;
         } else {
             isPulling = false;
@@ -421,8 +456,24 @@ function App() {
         const absDeltaX = Math.abs(deltaX);
         const absDeltaY = Math.abs(deltaY);
 
+        const isAnyModalOpen = previewFileRef.current || 
+                               detailsModalRef.current || 
+                               confirmModalRef.current.isOpen || 
+                               inputModalRef.current.isOpen || 
+                               isAddDriveOpenRef.current;
+
         // Horizontal Swipes (Dominant X movement)
         if (absDeltaX > absDeltaY && absDeltaX > 50) {
+            if (isAnyModalOpen) {
+                // If modal is open, horizontal swipe closes it (acting as a back gesture)
+                if (previewFileRef.current) setPreviewFile(null);
+                else if (detailsModalRef.current) setDetailsModal(null);
+                else if (confirmModalRef.current.isOpen) setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                else if (inputModalRef.current.isOpen) setInputModal(prev => ({ ...prev, isOpen: false }));
+                else if (isAddDriveOpenRef.current) setIsAddDriveOpen(false);
+                return;
+            }
+
             // Right Swipe (->)
             if (deltaX > 0) {
                 if (isSidebarOpenRef.current) return; // Already open
@@ -445,6 +496,7 @@ function App() {
         // Vertical Pull (Pull to Refresh)
         // Must be dominant Y, downward, start from top, and significant distance
         if (isPulling && deltaY > 100 && absDeltaY > absDeltaX * 2) {
+             if (isAnyModalOpen) return; // Prevent refresh if modal is open
              // Trigger Refresh
              if (window.navigator.vibrate) window.navigator.vibrate(20);
              if(fetchFilesRef.current) fetchFilesRef.current(currentPathRef.current);
@@ -465,10 +517,12 @@ function App() {
 
   // Filtered files
   const filesToDisplay = isGlobalSearch ? searchResults : files;
-  const filteredFiles = useMemo(() => filesToDisplay.filter(f => 
-    // Always filter by query (refine global results or filter local files)
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ), [filesToDisplay, searchQuery]);
+  const filteredFiles = useMemo(() => {
+      if (isGlobalSearch) return filesToDisplay;
+      return filesToDisplay.filter(f => 
+        f.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+  }, [filesToDisplay, searchQuery, isGlobalSearch]);
 
   // Sorted files
   const sortedFiles = useMemo(() => {
@@ -491,6 +545,9 @@ function App() {
           const extA = a.name.split('.').pop();
           const extB = b.name.split('.').pop();
           res = extA.localeCompare(extB);
+          break;
+        case 'size':
+          res = a.size - b.size;
           break;
         default: break;
       }
@@ -568,8 +625,14 @@ function App() {
   };
 
   const handleNavigate = (path) => {
+    if (path === currentPath) return;
+    setLoading(true);
+    setFiles([]);
     setCurrentPath(path);
     localStorage.setItem('last_path', path);
+    setSearchQuery('');
+    setIsGlobalSearch(false);
+    setSearchResults([]);
   };
 
   const handleGoUp = () => {
@@ -608,9 +671,53 @@ function App() {
 
   const toggleSelection = (path) => { const newSet = new Set(selectedPaths); if (newSet.has(path)) newSet.delete(path); else newSet.add(path); setSelectedPaths(newSet); };
   
-  const handleDelete = async () => {
-    if (!confirm(t.confirmDeleteItems.replace('{count}', selectedPaths.size))) return;
-    try { await api.deleteItems(Array.from(selectedPaths), activeDrive); fetchFiles(currentPath); setSelectedPaths(new Set()); } catch (err) { alert(t.deleteFailed); }
+  const handleDelete = () => {
+    const selectedItems = files.filter(f => selectedPaths.has(f.path));
+    const folders = selectedItems.filter(f => f.isDirectory);
+
+    const executeDelete = async () => {
+        try { 
+            await api.deleteItems(Array.from(selectedPaths), activeDrive); 
+            fetchFiles(currentPath); 
+            setSelectedPaths(new Set()); 
+        } catch (err) { alert(t.deleteFailed); }
+    };
+
+    const checkFoldersAndConfirm = async () => {
+        if (folders.length > 0) {
+            let hasNonEmptyFolder = false;
+            for (const folder of folders) {
+                try {
+                    const contents = await api.getFiles(folder.path, activeDrive);
+                    if (contents && contents.length > 0) {
+                        hasNonEmptyFolder = true;
+                        break;
+                    }
+                } catch (e) {
+                    console.warn('Failed to check folder contents:', folder.path, e);
+                }
+            }
+            if (hasNonEmptyFolder) {
+                setConfirmModal({
+                    isOpen: true,
+                    title: t.delete,
+                    message: t.confirmDeleteNonEmptyFolder,
+                    type: 'danger',
+                    onConfirm: executeDelete
+                });
+                return;
+            }
+        }
+        executeDelete();
+    };
+
+    setConfirmModal({
+        isOpen: true,
+        title: t.delete,
+        message: t.confirmDeleteItems.replace('{count}', selectedPaths.size),
+        type: 'danger',
+        onConfirm: checkFoldersAndConfirm
+    });
   };
   const handleMove = async (items, destination) => {
     if (items.includes(destination)) return;
@@ -680,19 +787,33 @@ function App() {
     });
   };
 
-  const removeDrive = async (id, e) => {
+  const handleDetails = () => {
+      if (selectedPaths.size !== 1) return;
+      const path = Array.from(selectedPaths)[0];
+      const file = files.find(f => f.path === path);
+      if (file) setDetailsModal(file);
+  };
+
+  const removeDrive = (id, e) => {
     e.stopPropagation();
-    if (!confirm(t.confirmRemoveDrive)) return;
-    try {
-      await api.removeDrive(id);
-      if (activeDrive === id) {
-        setActiveDrive('local');
-        localStorage.setItem('last_drive', 'local');
-        setCurrentPath('/');
-        localStorage.setItem('last_path', '/');
-      }
-      fetchDrives();
-    } catch (err) { alert('Failed to remove drive'); }
+    setConfirmModal({
+        isOpen: true,
+        title: t.settings,
+        message: t.confirmRemoveDrive,
+        type: 'danger',
+        onConfirm: async () => {
+            try {
+              await api.removeDrive(id);
+              if (activeDrive === id) {
+                setActiveDrive('local');
+                localStorage.setItem('last_drive', 'local');
+                setCurrentPath('/');
+                localStorage.setItem('last_path', '/');
+              }
+              fetchDrives();
+            } catch (err) { alert('Failed to remove drive'); }
+        }
+    });
   };
 
   const handleEditDrive = (id, currentName, e) => {
@@ -726,6 +847,10 @@ function App() {
   useEffect(() => { fetchFilesRef.current = fetchFiles; }, [fetchFiles]);
   useEffect(() => { selectedPathsRef.current = selectedPaths; }, [selectedPaths]);
   useEffect(() => { previewFileRef.current = previewFile; }, [previewFile]);
+  useEffect(() => { detailsModalRef.current = detailsModal; }, [detailsModal]);
+  useEffect(() => { isAddDriveOpenRef.current = isAddDriveOpen; }, [isAddDriveOpen]);
+  useEffect(() => { confirmModalRef.current = confirmModal; }, [confirmModal]);
+  useEffect(() => { inputModalRef.current = inputModal; }, [inputModal]);
 
     return (
 
@@ -925,7 +1050,7 @@ function App() {
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setIsSortMenuOpen(false)} />
                         <div className="absolute right-0 top-full mt-2 w-32 bg-white rounded-xl shadow-xl border border-slate-100 z-20 overflow-hidden py-1">
-                          {['name', 'date', 'type'].map(key => (
+                          {['name', 'date', 'type', 'size'].map(key => (
                             <button
                               key={key}
                               onClick={() => handleSort(key)}
@@ -1000,7 +1125,7 @@ function App() {
           <div className={clsx("grid gap-3 transition-all", viewMode === 'grid' ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" : "grid-cols-1")}>
             {loading && files.length === 0 ? (
               <div className="col-span-full py-20 text-center text-slate-400">{t.loading}</div>
-            ) : files.length === 0 ? (
+            ) : !isGlobalSearch && files.length === 0 ? (
               <div className="col-span-full py-20 text-center flex flex-col items-center gap-3">
                  <div className="w-16 h-16 bg-white rounded-full shadow-island flex items-center justify-center"><FolderIcon className="w-8 h-8 text-slate-300" /></div>
                  <p className="text-slate-400">{t.emptyFolder}</p>
@@ -1028,6 +1153,8 @@ function App() {
                       onPreview={setPreviewFile}
                       activeDrive={activeDrive}
                       isSelectionMode={selectedPaths.size > 0}
+                      showPath={isGlobalSearch}
+                      t={t}
                     />
                   ))}
                 </motion.div>
@@ -1039,27 +1166,33 @@ function App() {
         {/* Dynamic Island */}
         <div className="fixed bottom-8 left-0 right-0 flex justify-center z-40 pointer-events-none">
           <motion.div 
+            layout
             onClick={(e) => e.stopPropagation()}
+            transition={{
+              type: "spring",
+              stiffness: 400,
+              damping: 30
+            }}
             className={clsx(
-              "shadow-[0_20px_50px_rgba(0,0,0,0.1)] backdrop-blur-xl border border-white/20 pointer-events-auto flex items-center overflow-hidden transition-all duration-300 ease-spring",
-              isSelectionMode ? "bg-red-50/90 w-[300px] h-14 rounded-full" : hasClipboard ? "bg-indigo-50/90 w-52 h-14 rounded-full" : isIslandExpanded ? "bg-white/90 w-72 h-20 rounded-[40px]" : "bg-white/80 w-32 h-14 rounded-full"
+              "shadow-[0_20px_50px_rgba(0,0,0,0.15)] glass-blur border border-white/40 pointer-events-auto flex items-center overflow-hidden",
+              isSelectionMode ? "glass-bg-select w-fit min-w-[150px] h-14 rounded-full px-2" : hasClipboard ? "glass-bg-clipboard w-52 h-14 rounded-full" : isIslandExpanded ? "glass-bg-expanded w-72 h-20 rounded-[40px]" : "glass-bg-default w-32 h-14 rounded-full"
             )}
           >
             {isSelectionMode ? (
-               <div className="w-full h-full flex items-center justify-around px-4">
+               <div className="w-full h-full flex items-center justify-center gap-1 px-2">
                  <button onClick={handleDelete} className="text-red-500 font-medium text-xs hover:bg-red-100 px-2 py-1 rounded-lg whitespace-nowrap">
                     {t.delete} ({selectedPaths.size})
                  </button>
                  
-                 <div className="w-px h-4 bg-red-100 shrink-0"></div>
+                 <div className="w-px h-4 bg-slate-100 shrink-0"></div>
 
                  {selectedPaths.size === 1 && (
-                   <>
+                   <div className="flex items-center gap-2">
                      <button onClick={handleRename} className="text-slate-600 font-medium text-xs hover:bg-slate-100 px-2 py-1 rounded-lg whitespace-nowrap">
                         {t.rename}
                      </button>
                      <div className="w-px h-4 bg-slate-100 shrink-0"></div>
-                   </>
+                   </div>
                  )}
 
                  <button onClick={handleCut} className="text-slate-600 font-medium text-xs hover:bg-slate-100 px-2 py-1 rounded-lg whitespace-nowrap">
@@ -1069,9 +1202,17 @@ function App() {
                  <div className="w-px h-4 bg-slate-100 shrink-0"></div>
 
                  <button onClick={handleCopy} className="text-slate-600 font-medium text-xs hover:bg-slate-100 px-2 py-1 rounded-lg whitespace-nowrap flex items-center gap-1">
-                    <DocumentDuplicateIcon className="w-3 h-3" />
                     {t.copy}
                  </button>
+
+                 {selectedPaths.size === 1 && (
+                   <div className="flex items-center gap-2">
+                     <div className="w-px h-4 bg-slate-100 shrink-0"></div>
+                     <button onClick={handleDetails} className="text-slate-600 font-medium text-xs hover:bg-slate-100 px-2 py-1 rounded-lg whitespace-nowrap">
+                        {t.details}
+                     </button>
+                   </div>
+                 )}
                </div>
             ) : hasClipboard ? (
                <button onClick={handlePaste} className="w-full h-full flex items-center justify-center gap-2 font-semibold text-indigo-600 hover:bg-indigo-100/50">
@@ -1158,7 +1299,52 @@ function App() {
             )}
         </AnimatePresence>
 
-        <AnimatePresence>{previewFile && <div className="fixed inset-0 z-50"><PreviewModal file={{...previewFile, path: previewFile.path}} onClose={() => setPreviewFile(null)} drive={activeDrive} lang={lang} /></div>}</AnimatePresence>
+        <AnimatePresence>
+          {previewFile && (
+              <PreviewModal 
+                file={{...previewFile, path: previewFile.path}} 
+                onClose={() => setPreviewFile(null)} 
+                drive={activeDrive} 
+                lang={lang} 
+                onNext={() => {
+                   const currentIndex = sortedFiles.findIndex(f => f.path === previewFile.path);
+                   if (currentIndex !== -1 && currentIndex < sortedFiles.length - 1) {
+                       setPreviewFile(sortedFiles[currentIndex + 1]);
+                   }
+                }}
+                onPrev={() => {
+                   const currentIndex = sortedFiles.findIndex(f => f.path === previewFile.path);
+                   if (currentIndex > 0) {
+                       setPreviewFile(sortedFiles[currentIndex - 1]);
+                   }
+                }}
+                hasNext={sortedFiles.findIndex(f => f.path === previewFile.path) < sortedFiles.length - 1}
+                hasPrev={sortedFiles.findIndex(f => f.path === previewFile.path) > 0}
+              />
+          )}
+        </AnimatePresence>
+        
+        <AnimatePresence>
+            {detailsModal && (
+                <DetailsModal 
+                    file={detailsModal} 
+                    driveName={drives.find(d => d.id === activeDrive)?.name || activeDrive}
+                    onClose={() => setDetailsModal(null)} 
+                    lang={lang} 
+                />
+            )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+            {confirmModal.isOpen && (
+                <ConfirmModal 
+                    {...confirmModal}
+                    onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    lang={lang}
+                />
+            )}
+        </AnimatePresence>
+
         <AnimatePresence>{isAddDriveOpen && <div className="fixed inset-0 z-[60]"><AddDriveModal onClose={() => setIsAddDriveOpen(false)} onAdded={(newDrive) => {
           if (newDrive) {
             setDrives(prev => {
