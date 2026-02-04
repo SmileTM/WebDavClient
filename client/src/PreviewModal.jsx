@@ -77,7 +77,7 @@ const CustomAudioPlayer = ({ url, autoPlay = false }) => {
             {/* Controls Row */}
             <div className="flex items-center gap-4">
                  <button 
-                    onClick={togglePlay}
+                    onClick={(e) => { e.stopPropagation(); togglePlay(); }}
                     className="p-3 bg-indigo-500 rounded-full text-white hover:bg-indigo-600 transition-colors shadow-md flex-shrink-0"
                  >
                     {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
@@ -91,6 +91,10 @@ const CustomAudioPlayer = ({ url, autoPlay = false }) => {
                         max={duration || 0}
                         value={currentTime}
                         onChange={handleSeek}
+                        onClick={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => e.stopPropagation()}
                         className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-600"
                      />
                      
@@ -153,7 +157,7 @@ const CustomVideoPlayer = ({ url, autoPlay = false }) => {
 
     return (
         <div className="flex flex-col w-full bg-black/80 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl">
-            <div className="relative w-full bg-black" onClick={togglePlay}>
+            <div className="relative w-full bg-black" onClick={(e) => { e.stopPropagation(); togglePlay(); }}>
                 <video 
                     ref={videoRef} 
                     src={url} 
@@ -173,7 +177,7 @@ const CustomVideoPlayer = ({ url, autoPlay = false }) => {
             {/* Custom Controls Bar */}
             <div className="p-4 flex items-center gap-4 text-white">
                  <button 
-                    onClick={togglePlay}
+                    onClick={(e) => { e.stopPropagation(); togglePlay(); }}
                     className="p-2 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
                  >
                     {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
@@ -186,6 +190,10 @@ const CustomVideoPlayer = ({ url, autoPlay = false }) => {
                         max={duration || 0}
                         value={currentTime}
                         onChange={handleSeek}
+                        onClick={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => e.stopPropagation()}
                         className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400"
                      />
                      
