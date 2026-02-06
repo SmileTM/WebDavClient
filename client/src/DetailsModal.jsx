@@ -60,7 +60,7 @@ const DetailsModal = ({ file, driveName, onClose, lang = 'zh' }) => {
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400">{t.type}</span>
                         <span className="text-slate-700 font-medium truncate max-w-[70%]">
-                            {isFolder ? t.folder : (file.name.includes('.') ? `.${file.name.split('.').pop()}` : (file.type || 'Unknown'))}
+                            {isFolder ? t.folder : (file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : (file.type || 'Unknown'))}
                         </span>
                     </div>
                     

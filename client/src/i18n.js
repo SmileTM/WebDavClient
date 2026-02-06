@@ -9,6 +9,7 @@ export const translations = {
     searchPlaceholder: "Search... (Enter for Global)",
     selected: "{count} Selected",
     cancel: "Cancel",
+    selectAll: "Select All",
     cancelMove: "Cancel Move",
     uploading: "Uploading...",
     loading: "Loading...",
@@ -58,6 +59,8 @@ export const translations = {
     // Preview
     noPreview: "No Preview Available",
     download: "Download File",
+    downloadSuccess: "Download Successful",
+    downloadFailed: "Download Failed",
     errorLoading: "Error loading content",
     viewMode: "View Mode",
     localDriveName: "Local Storage",
@@ -72,7 +75,16 @@ export const translations = {
     fileInfo: "File Information",
     path: "Path",
     modified: "Modified",
-    location: "Location"
+    location: "Location",
+    // Transfers
+    transfers: "Transfers",
+    transfersStatus: "{active} active, {completed} completed",
+    clearDone: "Clear Done",
+    noTransfers: "No recent transfers",
+    pending: "Pending",
+    failed: "Failed",
+    totalSpeed: "Total Speed: {speed}",
+    remainingFiles: "Remaining: {count} files"
   },
   zh: {
     appTitle: "云盘管理",
@@ -84,6 +96,7 @@ export const translations = {
     searchPlaceholder: "搜索... (回车跨目录搜索)",
     selected: "已选 {count} 项",
     cancel: "取消",
+    selectAll: "全选",
     cancelMove: "取消移动",
     uploading: "上传中...",
     loading: "加载中...",
@@ -133,6 +146,8 @@ export const translations = {
     // Preview
     noPreview: "无法预览",
     download: "下载文件",
+    downloadSuccess: "下载成功",
+    downloadFailed: "下载失败",
     errorLoading: "加载内容出错",
     viewMode: "视图模式",
     localDriveName: "本地存储",
@@ -147,6 +162,15 @@ export const translations = {
     fileInfo: "文件信息",
     path: "路径",
     modified: "修改时间",
-    location: "位置"
+    location: "位置",
+    // Transfers
+    transfers: "传输列表",
+    transfersStatus: "{active} 进行中, {completed} 已完成",
+    clearDone: "清除已完成",
+    noTransfers: "暂无传输记录",
+    pending: "等待中",
+    failed: "失败",
+    totalSpeed: "总速度: {speed}",
+    remainingFiles: "剩余: {count} 个文件"
   }
 };

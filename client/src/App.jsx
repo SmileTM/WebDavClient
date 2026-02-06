@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from './api';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import TransferDashboard, { CircularProgress } from './components/TransferDashboard';
 import { 
   FolderIcon, 
   DocumentIcon, 
@@ -46,7 +47,7 @@ const getFileIcon = (file) => {
   if (file.isDirectory) return <FolderIcon className="w-8 h-8 text-indigo-400" />;
   if (file.type?.startsWith('image')) return <PhotoIcon className="w-8 h-8 text-pink-400" />;
   if (file.type?.startsWith('video')) return <VideoCameraIcon className="w-8 h-8 text-blue-400" />;
-  return <DocumentIcon className="w-8 h-8 text-slate-400" />;
+  return <DocumentIcon className="w-8 h-8 text-slate-500" />;
 };
 
 const formatSize = (bytes) => {
@@ -79,12 +80,17 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
 
   useEffect(() => {
     let active = true;
+    let createdUrl = null;
     if (isImage) {
         // Delay slightly to prioritize UI render
         const load = async () => {
             try {
                 const url = await api.getThumbnailUrl(file.path, activeDrive || 'local');
-                if (active && url) setThumbnailUrl(url);
+                if (active && url) {
+                    setThumbnailUrl(url);
+                    // If it's a blob URL, track it for cleanup
+                    if (url.startsWith('blob:')) createdUrl = url;
+                }
             } catch (e) {
                 // Ignore error
             }
@@ -93,7 +99,10 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
     } else {
         setThumbnailUrl('');
     }
-    return () => { active = false; };
+    return () => { 
+        active = false;
+        if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
   }, [file.path, activeDrive, isImage]);
 
   // --- Long Press Logic ---
@@ -240,7 +249,7 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
       <div className={clsx("pointer-events-none w-full", isList ? "flex-1 min-w-0 flex items-center justify-between gap-4" : "")}>
         <div className={clsx("min-w-0 flex-1", isList ? "" : "px-1")}>
           <h3 className={clsx(
-            "font-medium text-slate-700 truncate", 
+            "font-medium text-slate-500 truncate", 
             isList ? "text-sm" : "text-[11px] sm:text-xs"
           )}>
             {file.name}
@@ -251,7 +260,7 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
             </p>
           )}
           {!isList && (
-            <p className="text-[9px] text-slate-400 mt-0.5 truncate leading-none">
+            <p className="text-[9px] text-slate-500 mt-0.5 truncate leading-none">
               {itemInfo} • {new Date(file.mtime).toLocaleDateString()}
             </p>
           )}
@@ -260,7 +269,7 @@ const FileItem = ({ file, selectedPaths, toggleSelection, handleNavigate, handle
         {isList && (
           <div className="flex flex-col items-end text-right shrink-0 leading-tight">
             <span className="text-[10px] text-slate-500 tabular-nums">{itemInfo}</span>
-            <span className="text-[9px] text-slate-400 tabular-nums">{new Date(file.mtime).toLocaleDateString()}</span>
+            <span className="text-[9px] text-slate-500 tabular-nums">{new Date(file.mtime).toLocaleDateString()}</span>
           </div>
         )}
       </div>
@@ -288,7 +297,10 @@ function App() {
   const [currentPath, setCurrentPath] = useState('/');
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  // Removed simple uploading/progress state
+  const [tasks, setTasks] = useState([]); // { id, name, status, progress, speed, currentBytes, totalBytes }
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  
   const [isIslandExpanded, setIsIslandExpanded] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState(new Set());
   const [clipboard, setClipboard] = useState(null); 
@@ -341,7 +353,6 @@ function App() {
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'type', direction: 'asc' });
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [progress, setProgress] = useState(null); 
   const [inputModal, setInputModal] = useState({ isOpen: false, title: '', defaultValue: '', onConfirm: () => {} });
   const [detailsModal, setDetailsModal] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', type: 'info', onConfirm: () => {} });
@@ -507,11 +518,51 @@ function App() {
     window.addEventListener('touchmove', handleTouchMove);
     window.addEventListener('touchend', handleTouchEnd);
 
+    // Check for initial launch URL (Cold Start)
+    CapApp.getLaunchUrl().then(data => {
+        if (data && data.url && data.url.includes('transfers')) {
+            console.log('[DeepLink] Initial Launch URL:', data.url);
+            setIsDashboardOpen(true);
+        }
+    });
+
+    // Native Bridge Fallback (Robustness) - Direct Window Event
+    const handleDeepLink = () => {
+        console.log('[DeepLink] Window Event Fired');
+        setIsDashboardOpen(true);
+    };
+    window.addEventListener('openTransferDeepLink', handleDeepLink);
+
+    // Deep Link Handler (Background -> Foreground)
+    const deepLinkListener = CapApp.addListener('appUrlOpen', (data) => {
+        console.log('[DeepLink] appUrlOpen fired:', JSON.stringify(data));
+        if (data.url && data.url.includes('transfers')) {
+            console.log('[DeepLink] Opening dashboard...');
+            setIsDashboardOpen(true);
+        }
+    });
+
+    // Fallback: Check state change (Warm Start)
+    const appStateListener = CapApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+             CapApp.getLaunchUrl().then(data => {
+                console.log('[DeepLink] Resume Launch URL:', JSON.stringify(data));
+                if (data && data.url && data.url.includes('transfers')) {
+                    console.log('[DeepLink] State Change URL Match');
+                    setIsDashboardOpen(true);
+                }
+            });
+        }
+    });
+
     return () => {
         backListener.then(h => h.remove());
+        deepLinkListener.then(h => h.remove());
+        appStateListener.then(h => h.remove());
         window.removeEventListener('touchstart', handleTouchStart);
         window.removeEventListener('touchmove', handleTouchMove);
         window.removeEventListener('touchend', handleTouchEnd);
+        window.removeEventListener('openTransferDeepLink', handleDeepLink);
     };
   }, []); 
 
@@ -542,8 +593,8 @@ function App() {
           res = new Date(a.mtime) - new Date(b.mtime);
           break;
         case 'type':
-          const extA = a.name.split('.').pop();
-          const extB = b.name.split('.').pop();
+          const extA = a.name.includes('.') ? a.name.split('.').pop().toLowerCase() : '';
+          const extB = b.name.includes('.') ? b.name.split('.').pop().toLowerCase() : '';
           res = extA.localeCompare(extB);
           break;
         case 'size':
@@ -642,7 +693,7 @@ function App() {
     localStorage.setItem('last_path', parent);
   };
 
-  const handleUpload = async (acceptedFiles) => {
+  const handleUpload = (acceptedFiles) => {
     if (acceptedFiles.length === 0) return;
     
     // Duplicate Check
@@ -651,19 +702,93 @@ function App() {
       if (!confirm(t.confirmOverwrite.replace('{count}', duplicates.length))) return;
     }
 
-    setUploading(true);
-    setProgress({ current: 0, total: acceptedFiles.length, filename: 'Preparing...' });
+    setIsIslandExpanded(false);
     
-    try {
-      await api.uploadFiles(currentPath, acceptedFiles, activeDrive, (current, total, filename) => {
-          setProgress({ current, total, filename });
-      });
-      await fetchFiles(currentPath);
-      setIsIslandExpanded(false);
-    } catch (err) { alert(t.uploadFailed); } finally { 
-        setUploading(false); 
-        setProgress(null);
-    }
+    // 1. Create Tasks
+    const batchId = Date.now();
+    const newTasks = acceptedFiles.map((f, i) => ({
+        id: `upload_${batchId}_${i}`,
+        name: f.name,
+        size: f.size,
+        status: 'pending',
+        currentBytes: 0,
+        totalBytes: f.size,
+        speed: 0,
+        type: 'upload'
+    }));
+    
+    setTasks(prev => [...newTasks, ...prev]); // Add new tasks to top
+
+    // 2. Start Non-blocking Upload
+    // Map files to include their IDs for cancellation targeting
+    const filesWithId = acceptedFiles.map((f, i) => {
+        // Create a proxy object or attach id to file (less clean but works)
+        // Or better: modify api to accept objects { file, id }
+        // Current API expects File objects for uploadFiles. 
+        // We will monkey-patch the File object with the ID since JS allows it.
+        f.taskId = newTasks[i].id;
+        return f;
+    });
+
+    api.uploadFiles(
+        currentPath, 
+        filesWithId, 
+        activeDrive, 
+        (index, total, name, speed, currentBytes, totalBytes) => {
+            // Update Task Progress
+            // Since api executes sequentially, index-1 corresponds to newTasks[index-1]
+            // We need to map back to our specific task ID.
+            const taskIndex = index - 1; 
+            if (taskIndex >= 0 && taskIndex < newTasks.length) {
+                const taskId = newTasks[taskIndex].id;
+                
+                setTasks(prev => prev.map(t => {
+                    if (t.id === taskId) {
+                        if (t.status === 'error') return t; // Ignore if cancelled/failed
+                        const isDone = currentBytes === totalBytes && totalBytes > 0;
+                        return { 
+                            ...t, 
+                            status: isDone ? 'done' : 'active',
+                            currentBytes,
+                            totalBytes,
+                            speed,
+                            // If previous items are pending but index moved past them, mark them done? 
+                            // api runs sequentially, so items < index are done.
+                        };
+                    }
+                    // Auto-complete previous tasks in this batch if we missed their 'done' event
+                    // (Double safety)
+                    if (newTasks.some(nt => nt.id === t.id) && newTasks.indexOf(newTasks.find(nt => nt.id === t.id)) < taskIndex) {
+                         if (t.status !== 'done') return { ...t, status: 'done', currentBytes: t.totalBytes };
+                    }
+                    return t;
+                }));
+            }
+        },
+        (finishedFileName) => {
+            // Mark specific task done by name (fallback if progress didn't hit 100%)
+            // Ideally we use ID, but api only returns filename currently.
+            // We can match by name within this batch.
+            const task = newTasks.find(t => t.name === finishedFileName);
+            if (task) {
+                 setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'done', currentBytes: t.totalBytes } : t));
+            }
+            
+            // Live Refresh
+            if (currentPathRef.current === currentPath) {
+                 fetchFilesRef.current(currentPath);
+            }
+        }
+    ).catch(err => {
+        // Mark remaining pending tasks as error
+        setTasks(prev => prev.map(t => {
+            if (newTasks.some(nt => nt.id === t.id) && t.status !== 'done') {
+                return { ...t, status: 'error' };
+            }
+            return t;
+        }));
+        alert(t.uploadFailed);
+    });
   };
 
   const onDrop = useCallback(acceptedFiles => { handleUpload(acceptedFiles); }, [currentPath, activeDrive, files, t]); // Add files/t dependency
@@ -726,41 +851,92 @@ function App() {
   const handleCut = () => { setClipboard({ mode: 'move', items: Array.from(selectedPaths), driveId: activeDrive }); setSelectedPaths(new Set()); };
   const handleCopy = () => { setClipboard({ mode: 'copy', items: Array.from(selectedPaths), driveId: activeDrive }); setSelectedPaths(new Set()); };
   
-  const handlePaste = async () => { 
+  const handlePaste = () => { 
     if (!clipboard || !clipboard.items) return; 
     
     // Check if cross-drive
     const sourceDrive = clipboard.driveId || activeDrive; 
     const destDrive = activeDrive;
     const isMove = clipboard.mode === 'move';
+    const targetPath = currentPath; // Capture target path at start
+    const items = clipboard.items;
+    
+    setClipboard(null); 
 
-    try {
-        const total = clipboard.items.length;
-        setProgress({ current: 0, total, filename: 'Preparing...' });
-        
-        if (sourceDrive === destDrive) {
-            // Same drive
-            if (isMove) {
-                await api.moveItems(clipboard.items, currentPath, activeDrive);
-            } else {
-                // Same drive copy
-                await api.crossDriveTransfer(clipboard.items, sourceDrive, currentPath, destDrive, false, (current, total, filename) => {
-                    setProgress({ current, total, filename });
-                });
-            }
-        } else {
-            // Cross drive
-            await api.crossDriveTransfer(clipboard.items, sourceDrive, currentPath, destDrive, isMove, (current, total, filename) => {
-                setProgress({ current, total, filename });
-            });
+    // 1. Create Tasks
+    const batchId = Date.now();
+    const newTasks = items.map((path, i) => ({
+        id: `transfer_${batchId}_${i}`,
+        name: path.split('/').pop(),
+        status: 'pending',
+        currentBytes: 0,
+        totalBytes: 0, // Unknown initially for remote files
+        speed: 0,
+        type: isMove ? 'move' : 'copy'
+    }));
+    setTasks(prev => [...newTasks, ...prev]);
+
+    // Prepare items with IDs
+    const itemsWithId = items.map((path, i) => ({
+        path: path,
+        id: newTasks[i].id
+    }));
+
+    // 2. Start Transfer
+    const onProgress = (index, total, name, speed, currentBytes, totalBytes) => {
+        const taskIndex = index - 1;
+        if (taskIndex >= 0 && taskIndex < newTasks.length) {
+            const taskId = newTasks[taskIndex].id;
+            setTasks(prev => prev.map(t => {
+                if (t.id === taskId) {
+                    if (t.status === 'error') return t; // Ignore if cancelled/failed
+                    const isDone = currentBytes === totalBytes && totalBytes > 0;
+                    return { 
+                        ...t, 
+                        status: isDone ? 'done' : 'active',
+                        currentBytes,
+                        // Update totalBytes if we just learned it
+                        totalBytes: totalBytes > 0 ? totalBytes : t.totalBytes, 
+                        speed 
+                    };
+                }
+                // Cleanup previous
+                if (newTasks.some(nt => nt.id === t.id) && newTasks.indexOf(newTasks.find(nt => nt.id === t.id)) < taskIndex) {
+                     if (t.status !== 'done') return { ...t, status: 'done', currentBytes: t.totalBytes };
+                }
+                return t;
+            }));
         }
-        fetchFiles(currentPath); 
-        setClipboard(null); 
-    } catch (err) {
+    };
+    
+    const onComplete = (finishedItemName) => {
+         const task = newTasks.find(t => t.name === finishedItemName);
+         if (task) {
+              setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'done', currentBytes: t.totalBytes } : t));
+         }
+         if (currentPathRef.current === targetPath) fetchFilesRef.current(targetPath);
+    };
+
+    const transferPromise = (sourceDrive === destDrive) 
+        ? (isMove 
+            ? api.moveItems(items, targetPath, activeDrive) 
+            : api.crossDriveTransfer(itemsWithId, sourceDrive, targetPath, destDrive, false, onProgress, onComplete))
+        : api.crossDriveTransfer(itemsWithId, sourceDrive, targetPath, destDrive, isMove, onProgress, onComplete);
+    
+    transferPromise
+        .then(() => {
+            // Ensure final refresh after all items are done (crucial for same-drive moves)
+            if (currentPathRef.current === targetPath) fetchFilesRef.current(targetPath);
+        })
+        .catch(err => {
+        setTasks(prev => prev.map(t => {
+            if (newTasks.some(nt => nt.id === t.id) && t.status !== 'done') {
+                return { ...t, status: 'error' };
+            }
+            return t;
+        }));
         alert((isMove ? t.moveFailed : 'Copy Failed') + ': ' + (err.message || ''));
-    } finally {
-        setProgress(null);
-    }
+    });
   };
   
   const handleRename = () => {
@@ -836,6 +1012,89 @@ function App() {
     });
   };
 
+  const handleCancelTask = (taskId) => {
+      // 1. Notify API to cancel
+      api.cancelTask(taskId);
+      
+      // 2. Update UI immediately
+      setTasks(prev => prev.map(t => {
+          if (t.id === taskId) {
+              return { ...t, status: 'error', name: t.name + ' (Cancelled)' }; 
+          }
+          return t;
+      }));
+  };
+
+  const handleDownload = (file) => {
+      // Logic for downloading file (WebDAV -> Local Download Folder)
+      // This uses crossDriveTransfer (copy) from Active Drive -> Local (Default Download Dir or specific?)
+      // For Mobile: usually 'Downloads' or 'Documents'.
+      // For now, let's assume downloading to the root of 'local' drive for simplicity in this manager, 
+      // or we can implement a specific 'Download' action that saves to device public Downloads.
+      // But based on the app structure, 'local' drive IS the device storage access.
+      
+      const sourceDrive = activeDrive;
+      const destDrive = 'local';
+      const targetPath = '/Download'; // Standard Download folder on Android/Local
+      
+      // Ensure target folder exists (implicitly handled by transfer or manual check)
+      // Actually crossDriveTransfer doesn't auto-create parent dest folder if not recursive? 
+      // It handles it for directories. For file, we assume targetPath is the FOLDER.
+
+      // 1. Create Task
+      const batchId = Date.now();
+      const taskId = `download_${batchId}`;
+      const newTask = {
+          id: taskId,
+          name: file.name,
+          size: file.size,
+          status: 'pending',
+          currentBytes: 0,
+          totalBytes: file.size,
+          speed: 0,
+          type: 'download'
+      };
+      
+      setTasks(prev => [newTask, ...prev]);
+
+      const itemsWithId = [{ path: file.path, id: taskId }];
+
+      // 2. Start Transfer
+      const onProgress = (index, total, name, speed, currentBytes, totalBytes) => {
+           setTasks(prev => prev.map(t => {
+               if (t.id === taskId) {
+                   if (t.status === 'error') return t;
+                   const isDone = currentBytes === totalBytes && totalBytes > 0;
+                   return { 
+                       ...t, 
+                       status: isDone ? 'done' : 'active',
+                       currentBytes,
+                       totalBytes: totalBytes > 0 ? totalBytes : t.totalBytes,
+                       speed
+                   };
+               }
+               return t;
+           }));
+      };
+
+      const onComplete = (finishedItemName) => {
+           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', currentBytes: t.totalBytes } : t));
+           // If we are viewing the download folder, refresh
+           if (activeDrive === 'local' && currentPathRef.current === targetPath) {
+               fetchFilesRef.current(targetPath);
+           }
+      };
+
+      // Ensure Download folder exists (Optional, but good practice)
+      // We can fire-and-forget this check or do it inside api
+      
+      api.crossDriveTransfer(itemsWithId, sourceDrive, targetPath, destDrive, false, onProgress, onComplete)
+      .catch(err => {
+          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'error' } : t));
+          alert(t.downloadFailed + ': ' + err.message);
+      });
+  };
+
   const isSelectionMode = selectedPaths.size > 0;
   const hasClipboard = clipboard && clipboard.items.length > 0;
 
@@ -893,7 +1152,7 @@ function App() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
               <ServerStackIcon className="w-6 h-6" />
             </div>
-            <span className="text-lg font-bold text-slate-800 tracking-tight">{t.appTitle}</span>
+            <span className="text-lg font-bold text-slate-500 tracking-tight">{t.appTitle}</span>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1">
             <p className="px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t.drives}</p>
@@ -908,11 +1167,11 @@ function App() {
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer",
                   activeDrive === drive.id 
                     ? "bg-indigo-50 text-indigo-700 shadow-sm" 
-                    : "text-slate-600 hover:bg-slate-100"
+                    : "text-slate-500 hover:bg-slate-100"
                 )}
               >
                 <div className="shrink-0 pt-0.5">
-                  <ServerStackIcon className={clsx("w-5 h-5", activeDrive === drive.id ? "text-indigo-600" : "text-slate-400")} />
+                  <ServerStackIcon className={clsx("w-5 h-5", activeDrive === drive.id ? "text-indigo-600" : "text-slate-500")} />
                 </div>
                 
                 <div className="flex-1 min-w-0 flex flex-col items-start gap-1">
@@ -927,7 +1186,7 @@ function App() {
                       </div>
                       <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
                         <div 
-                          className={clsx("h-full rounded-full", activeDrive === drive.id ? "bg-indigo-500" : "bg-slate-400")}
+                          className={clsx("h-full rounded-full", activeDrive === drive.id ? "bg-indigo-500" : "bg-slate-500")}
                           style={{ width: `${Math.min((drive.quota.used / drive.quota.total) * 100, 100)}%` }}
                         ></div>
                       </div>
@@ -939,14 +1198,14 @@ function App() {
                   <div className="flex items-center shrink-0 gap-1 opacity-0 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                     <button 
                       onClick={(e) => handleEditDrive(drive.id, drive.name, e)}
-                      className="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 focus:opacity-100"
+                      className="p-1.5 rounded-full hover:bg-slate-200 text-slate-500 hover:text-slate-700 focus:opacity-100"
                       title={t.rename}
                     >
                       <PencilIcon className="w-3.5 h-3.5" />
                     </button>
                     <button 
                       onClick={(e) => removeDrive(drive.id, e)}
-                      className="p-1.5 rounded-full hover:bg-red-100 text-slate-400 hover:text-red-500 focus:opacity-100"
+                      className="p-1.5 rounded-full hover:bg-red-100 text-slate-500 hover:text-red-500 focus:opacity-100"
                       title={t.delete}
                     >
                       <TrashIcon className="w-3.5 h-3.5" />
@@ -1006,7 +1265,7 @@ function App() {
               {isSearching ? (
                   <ArrowPathIcon className="w-5 h-5 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 animate-spin" />
               ) : (
-                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               )}
               <input 
                 id="search-files"
@@ -1016,14 +1275,30 @@ function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch()}
-                className="w-full bg-slate-100/50 hover:bg-slate-100 focus:bg-white border-none rounded-full py-2 pl-10 pr-4 text-sm outline-none ring-1 ring-transparent focus:ring-indigo-500/20 transition-all placeholder:text-slate-400 text-slate-600"
+                className="w-full bg-slate-100/50 hover:bg-slate-100 focus:bg-white border-none rounded-full py-2 pl-10 pr-4 text-sm outline-none ring-1 ring-transparent focus:ring-indigo-500/20 transition-all placeholder:text-xs placeholder:text-slate-400 text-slate-500"
               />
             </div>
             
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0">
+               {/* New Circular Progress */}
+               <CircularProgress 
+                  progress={{ 
+                      current: tasks.filter(t => t.status !== 'done' && t.status !== 'error').reduce((acc, t) => acc + (t.currentBytes || 0), 0), 
+                      total: tasks.filter(t => t.status !== 'done' && t.status !== 'error').reduce((acc, t) => acc + (t.totalBytes || 0), 0)
+                  }} 
+                  activeCount={tasks.filter(t => t.status === 'active' || t.status === 'pending').length}
+                  onClick={() => setIsDashboardOpen(true)}
+               />
+
               {isSelectionMode ? (
-                <button onClick={() => setSelectedPaths(new Set())} className="text-sm text-indigo-600 font-medium px-2 sm:px-4">
-                  {t.cancel}
+                <button 
+                  onClick={() => {
+                    if (selectedPaths.size === sortedFiles.length) setSelectedPaths(new Set());
+                    else setSelectedPaths(new Set(sortedFiles.map(f => f.path)));
+                  }} 
+                  className="text-sm text-indigo-600 font-medium px-2 sm:px-4"
+                >
+                  {selectedPaths.size === sortedFiles.length ? t.cancel : t.selectAll}
                 </button>
               ) : hasClipboard ? (
                 <button onClick={() => setClipboard(null)} className="text-sm text-slate-400 font-medium px-2 sm:px-4">
@@ -1031,12 +1306,6 @@ function App() {
                 </button>
               ) : (
                 <>
-                  {uploading && (
-                     <div className="flex items-center gap-2 text-sm text-slate-500 mr-2 hidden sm:flex">
-                       <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                       <span>{t.uploading}</span>
-                     </div>
-                  )}
                   
                   {/* Sort Menu */}
                   <div className="relative">
@@ -1054,7 +1323,7 @@ function App() {
                             <button
                               key={key}
                               onClick={() => handleSort(key)}
-                              className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-between"
+                              className="w-full text-left px-4 py-2 text-sm text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-between"
                             >
                               <span className="capitalize">{t[key] || key}</span>
                               {sortConfig.key === key && (
@@ -1224,7 +1493,7 @@ function App() {
                 {!isIslandExpanded && (
                   <div className="w-full flex justify-between px-4 items-center h-full">
                     <button onClick={() => fetchFiles(currentPath)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
-                      <ArrowPathIcon className={clsx("w-6 h-6", (loading || uploading) && "animate-spin text-indigo-500")} />
+                      <ArrowPathIcon className={clsx("w-6 h-6", (loading) && "animate-spin text-indigo-500")} />
                     </button>
                     <div className="w-px h-6 bg-slate-200"></div>
                     <button onClick={() => setIsIslandExpanded(true)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
@@ -1320,6 +1589,7 @@ function App() {
                 }}
                 hasNext={sortedFiles.findIndex(f => f.path === previewFile.path) < sortedFiles.length - 1}
                 hasPrev={sortedFiles.findIndex(f => f.path === previewFile.path) > 0}
+                onDownload={handleDownload} // Pass the download handler
               />
           )}
         </AnimatePresence>
@@ -1355,31 +1625,14 @@ function App() {
           }
         }} lang={lang} /></div>}</AnimatePresence>
 
-        {/* Progress Toast */}
-        <AnimatePresence>
-            {progress && (
-                <motion.div
-                    initial={{ opacity: 0, y: 50 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 50 }}
-                    className="fixed bottom-24 right-4 z-50 bg-slate-800 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 min-w-[200px] max-w-[300px]"
-                >
-                    <div className="relative w-8 h-8 shrink-0">
-                        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                            <path className="text-slate-600" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
-                            <path className="text-indigo-400 transition-all duration-300 ease-linear" strokeDasharray={`${(progress.current / progress.total) * 100}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">
-                            {Math.round((progress.current / progress.total) * 100)}%
-                        </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{progress.filename}</p>
-                        <p className="text-[10px] text-slate-400">{progress.current} / {progress.total} items</p>
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
+        <TransferDashboard 
+            isOpen={isDashboardOpen} 
+            onClose={() => setIsDashboardOpen(false)} 
+            tasks={tasks}
+            onClearCompleted={() => setTasks(prev => prev.filter(t => t.status !== 'done' && t.status !== 'error'))}
+            onCancel={handleCancelTask}
+            lang={lang}
+        />
       </div>
     </div>
   );

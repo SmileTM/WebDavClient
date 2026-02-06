@@ -201,10 +201,10 @@ function createWindow() {
 
   // Wait for server to be ready before loading URL
   log(`Waiting for ${url}...`);
-  waitOn({ resources: [url], timeout: 20000 })
+  waitOn({ resources: [url], timeout: 20000, interval: 500 })
     .then(() => {
       log('Server is ready, loading window...');
-      mainWindow.loadURL(url);
+      mainWindow.loadURL(url).catch(e => log(`Failed to load URL: ${e.message}`));
     })
     .catch((err) => {
       log(`Server timeout or error: ${err}`);
@@ -217,6 +217,7 @@ function createWindow() {
         <body style="font-family: sans-serif; padding: 2rem; text-align: center;">
           <h1 style="color: #ef4444;">Application Failed to Start</h1>
           <p>The internal server could not be reached.</p>
+          <p>Please check if port ${serverPort} is available or blocked by firewall.</p>
           <p style="background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: left; font-family: monospace; max-height: 400px; overflow-y: auto;">
             <strong>Error:</strong> ${err.message}<br/><br/>
             <strong>Log (${LOG_PATH}):</strong><br/>

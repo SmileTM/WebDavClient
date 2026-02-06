@@ -19,6 +19,7 @@
     "@capacitor/ios": "^8.0.2",
     "@capacitor/preferences": "^8.0.0",
     "axios": "^1.6.0",
+    "buffer": "^6.0.3",
     "clsx": "^2.0.0",
     "crypto-js": "^4.2.0",
     "date-fns": "^2.30.0",

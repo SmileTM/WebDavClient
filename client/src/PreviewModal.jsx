@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { motion } from 'framer-motion';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -40,15 +41,21 @@ const CustomAudioPlayer = ({ url, autoPlay = false }) => {
         const updateTime = () => setCurrentTime(audio.currentTime);
         const updateDuration = () => setDuration(audio.duration);
         const onEnded = () => setIsPlaying(false);
+        const onPlay = () => setIsPlaying(true);
+        const onPause = () => setIsPlaying(false);
 
         audio.addEventListener('timeupdate', updateTime);
         audio.addEventListener('loadedmetadata', updateDuration);
         audio.addEventListener('ended', onEnded);
+        audio.addEventListener('play', onPlay);
+        audio.addEventListener('pause', onPause);
 
         return () => {
             audio.removeEventListener('timeupdate', updateTime);
             audio.removeEventListener('loadedmetadata', updateDuration);
             audio.removeEventListener('ended', onEnded);
+            audio.removeEventListener('play', onPlay);
+            audio.removeEventListener('pause', onPause);
         };
     }, [url, autoPlay]);
 
@@ -59,7 +66,6 @@ const CustomAudioPlayer = ({ url, autoPlay = false }) => {
         } else {
             audioRef.current.play();
         }
-        setIsPlaying(!isPlaying);
     };
 
     const handleSeek = (e) => {
@@ -207,7 +213,7 @@ const CustomVideoPlayer = ({ url, autoPlay = false }) => {
     );
 };
 
-const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext, hasPrev, lang = 'zh' }) => {
+const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext, hasPrev, lang = 'zh', onDownload }) => {
   const t = translations[lang];
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -238,6 +244,8 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
     const load = async () => {
         // Reset Zoom state on file change
         isZoomed.current = false;
+        setUrl('');
+        setContent(null);
 
         if (isHeic) {
             setLoading(true);
@@ -337,6 +345,57 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
     setNumPages(numPages);
   }
 
+  const handleDownload = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (onDownload) {
+        onDownload(file);
+        return;
+    }
+
+    if (!isNative) {
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        return;
+    }
+
+    try {
+        let blob;
+        if (url && url.startsWith('blob:')) {
+            const response = await fetch(url);
+            blob = await response.blob();
+        } else {
+            // If url is not ready yet, fetch the blob directly from the API
+            blob = await api.getFileBlob(file.path, drive);
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+            const base64data = reader.result;
+            try {
+                await Filesystem.writeFile({
+                    path: `Download/${file.name}`,
+                    data: base64data,
+                    directory: Directory.ExternalStorage,
+                    recursive: true
+                });
+                alert(t.downloadSuccess);
+            } catch (err) {
+                console.error(err);
+                alert(t.downloadFailed);
+            }
+        };
+    } catch (err) {
+        console.error(err);
+        alert(t.downloadFailed);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -405,7 +464,7 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
         )}
 
         {isVideo && url && (
-          <CustomVideoPlayer url={url} autoPlay={true} />
+          <CustomVideoPlayer key={url} url={url} autoPlay={true} />
         )}
 
         {isAudio && url && (
@@ -414,7 +473,7 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
               <DocumentIcon className="w-12 h-12 text-indigo-500" />
             </div>
             <h3 className="font-medium text-slate-800 text-center truncate w-full px-2">{file.name}</h3>
-            <CustomAudioPlayer url={url} autoPlay={true} />
+            <CustomAudioPlayer key={url} url={url} autoPlay={true} />
           </div>
         )}
 
@@ -473,15 +532,14 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
               <p className="text-lg font-semibold text-slate-800">{t.noPreview}</p>
               <p className="text-sm text-slate-500 mt-1 break-all px-4">{file.name}</p>
             </div>
-            {url && drive !== 'local' && (
-            <a 
-              href={url} 
-              download={file.name}
+            {drive !== 'local' && (
+            <button
+              onClick={handleDownload}
               className="flex items-center gap-2 bg-indigo-500 text-white px-8 py-3 rounded-2xl hover:bg-indigo-600 transition-all font-medium shadow-lg shadow-indigo-200 active:scale-95 text-sm"
             >
               <ArrowDownTrayIcon className="w-5 h-5" />
               {t.download}
-            </a>
+            </button>
             )}
           </div>
         )}
@@ -489,42 +547,27 @@ const PreviewModal = ({ file, onClose, drive = 'local', onNext, onPrev, hasNext,
 
       {/* Unified Bottom Controls - Centered for Mobile Ergonomics */}
       <div 
-        className={clsx(
-            "fixed left-1/2 -translate-x-1/2 z-50 flex items-center transition-all",
-            drive === 'local' 
-                ? "gap-0" // Standalone
-                : "gap-6 px-6 py-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 shadow-2xl" // Island
-        )}
+        className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center transition-all gap-4"
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
       >
         {/* Close Button */}
         <button 
           onClick={onClose}
-          className={clsx(
-              "flex items-center justify-center rounded-full text-white transition-all active:scale-95",
-              drive === 'local'
-                  ? "p-3 bg-white/10 backdrop-blur-xl border border-white/20 shadow-lg hover:bg-white/20" // Standalone Glass Circle
-                  : "p-3 bg-white/10 hover:bg-white/20" // Island Button
-          )}
+          className="flex items-center justify-center rounded-full bg-white/20 backdrop-blur-xl border border-white/20 shadow-xl text-white transition-all active:scale-95 p-3.5 hover:bg-white/30"
           title={t.close}
         >
-          <XMarkIcon className={clsx(drive === 'local' ? "w-5 h-5" : "w-6 h-6")} />
+          <XMarkIcon className="w-6 h-6" />
         </button>
 
-        {/* Divider */}
-        {drive !== 'local' && <div className="w-px h-6 bg-white/20" />}
-
         {/* Download Button */}
-        {url && drive !== 'local' && (
-          <a 
-            href={url} 
-            download={file.name}
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center justify-center p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
+        {drive !== 'local' && (
+          <button 
+            onClick={handleDownload}
+            className="flex items-center justify-center rounded-full bg-white/20 backdrop-blur-xl border border-white/20 shadow-xl text-white transition-all active:scale-95 p-3.5 hover:bg-white/30"
             title={t.download}
           >
             <ArrowDownTrayIcon className="w-6 h-6" />
-          </a>
+          </button>
         )}
       </div>
 

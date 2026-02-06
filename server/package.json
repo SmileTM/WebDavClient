@@ -16,6 +16,10 @@
     "webdav": "^5.8.0",
     "webdav-server": "^2.6.2"
   },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "0.34.5",
+    "@img/sharp-darwin-x64": "0.34.5"
+  },
   "overrides": {
     "fast-xml-parser": "5.3.4"
   },

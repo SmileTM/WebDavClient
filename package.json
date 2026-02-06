@@ -8,8 +8,10 @@
     "dev": "concurrently \"npm run server --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
     "start": "npm run start --prefix server",
+    "fix-sharp-mac": "cd server && npm install --os=darwin --cpu=arm64 sharp",
     "electron:dev": "npm run build && electron .",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run fix-sharp-mac && npm run electron:build"
   },
   "build": {
     "appId": "com.android.drive",
@@ -31,7 +33,11 @@
     "directories": {
       "output": "dist-electron"
     },
-    "asar": true
+    "asar": false,
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
+    ]
   },
   "dependencies": {
     "cors": "^2.8.5",

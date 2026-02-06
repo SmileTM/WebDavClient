@@ -24,9 +24,9 @@ npm run install-all  # 安装 client 和 server 的所有依赖
 桌面版会打包完整的 Node.js 服务端，功能最全（无权限限制）。
 
 1. **构建前端与打包:**
-   在项目根目录运行：
+   在项目根目录运行以下命令即可自动处理 `sharp` 库依赖并完成打包：
    ```bash
-   npm run electron:build
+   npm run electron:build:mac
    ```
 
 2. **输出产物:**
