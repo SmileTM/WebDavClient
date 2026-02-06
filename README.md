@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="client/assets/icon.png" width="128" height="128" alt="WebDavClient Logo" style="border-radius: 50%" />
+  <img src="client/assets/icon-circle.png" width="128" height="128" alt="WebDavClient Logo" />
 </p>
 
 # WebDavClient - 极简全能的私有云盘助手
